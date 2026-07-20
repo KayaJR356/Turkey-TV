@@ -14,6 +14,9 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import androidx.media3.common.util.UnstableApi;
+
+@UnstableApi
 public final class SplashActivity extends Activity {
     private static final long SPLASH_DURATION_MS = 900L;
     private final Handler handler = new Handler(Looper.getMainLooper());
