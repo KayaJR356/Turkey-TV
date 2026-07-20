@@ -1,86 +1,55 @@
-# Türksat TV for Android TV
+# Türkiye TV
 
-Kumandayla kullanılmak üzere tasarlanmış, reklamsız uygulama arayüzüne sahip kişisel Android TV canlı kanal oynatıcısı.
+Android TV ve Google TV için kumanda odaklı, tam ekran canlı kanal oynatıcısı.
 
-## Öne çıkanlar
+## Özellikler
 
-- Android TV / Google TV Leanback başlatıcı desteği
-- Kumandanın rakam tuşlarıyla doğrudan kanal seçimi (`1`–`285`)
-- Kanal Yukarı/Aşağı ve yön tuşlarıyla hızlı kanal değiştirme
-- OK, Menü veya Rehber tuşuyla kumanda odaklı kanal listesi
-- Kırmızı/Yıldız tuşuyla favori ekleme ve kaldırma
-- Yeşil/Bilgi tuşuyla yayın akışı görünümü
-- Mavi/Ayarlar tuşuyla özel HTTPS JSON kanal listesi tanımlama
-- Oynat/Duraklat, ileri ve geri medya tuşları
-- Her açılışta web kanal listesini yeniden keşfetme
-- Ağ sorunu olduğunda son başarılı kanal listesini kullanma
-- Resmî TRT HLS yayınlarında Media3/ExoPlayer ile uyarlanabilir HD oynatma
-- Diğer kanallarda kanal sayfasındaki oynatıcıyı TV ekranına genişleten WebView yedeği
+- `canlitv.diy/tr` kataloğundaki kanal adlarını ve sırasını her açılışta yeniler
+- 20 Temmuz 2026 kataloğundaki 285 kanalın tamamını aynı sırayla gösterir
+- Kanal oynatıcısındaki HLS/DASH adresini bulup Media3 ile uyarlanabilir kalitede oynatır
+- TRT kanallarında doğrulanmış resmî HLS yayınlarını kullanır
+- HLS/DASH sağlamayan YouTube ve dış kaynak kanallarını kendi doğrudan oynatıcısında tam ekrana alır
+- Son eksiksiz kanal listesini cihazda saklar; eksik listeyi hiçbir zaman tam listenin üzerine yazmaz
+- Büyük yazı, belirgin odak halkası ve 10-foot TV mesafesine uygun kanal paneli sunar
+- İlk açılışta başlangıç davranışını sorar
+- Son izlenen kanal, her zaman 1. kanal veya açılışta kanal seçimi seçeneklerini destekler
+- Açılışta otomatik oynatma ve kanal bilgi süresi ayarları içerir
+- Son izlenen kanalı cihazda saklar
+- GitHub Actions ile her değişiklikte debug APK derler ve Android Lint çalıştırır
 
-## Kanal sırası ve güncelleme
-
-Türksat TKGS ana liste verisi internette indirilebilir bir LCN/JSON servisi olarak yayınlanmadığından uygulama, kullanıcı tarafından onaylanan `https://www.canlitv.diy/tr` kanal sırasını yedek sıralama olarak kullanır. Sayfa her uygulama açılışında HTTPS üzerinden okunur ve kanal başlıkları ile bağlantıları yeniden oluşturulur. 20'den az geçerli kayıt dönerse güncelleme reddedilir; son başarılı liste korunur.
-
-Varsayılan kaynak 20 Temmuz 2026 doğrulamasında 285 kanal döndürmüştür. Site yapısı veya yayın hakları değişirse bazı kanallar geçici olarak çalışmayabilir.
-
-## Kumanda haritası
+## Kumanda
 
 | Tuş | İşlev |
 |---|---|
-| `0–9` | 1,3 saniye içinde girilen numaraya git |
-| Kanal `+/-` | Sonraki / önceki kanal |
-| Yukarı / Aşağı | İzleme ekranında sonraki / önceki kanal |
-| OK / Menü / Rehber | Kanal listesini aç / kapat |
-| Geri | Kanal listesini kapat |
-| Kırmızı / `*` | Geçerli kanalı favorilere ekle / çıkar |
-| Yeşil / Bilgi | Web kanallarında yayın akışını aç / kapat |
-| Mavi / Ayarlar | Özel kanal listesi adresi |
-| Oynat-Duraklat | Oynatmayı kontrol et |
-| İleri / Geri sar | ExoPlayer zaman atlama |
+| `Program + / -` | Sonraki / önceki kanal |
+| `0–9` | Kanal numarasına doğrudan git |
+| `OK`, Menü veya Rehber | Kanal listesini aç |
+| Yön tuşları | Yalnızca kanal ve ayar menülerinde gezin |
+| Sağ veya Geri | Açık menüyü kapat |
+| Ayarlar veya Mavi | Ayarları aç |
+| Bilgi | Kanal bilgisini göster |
+| Oynat / Duraklat | Yayını oynat veya duraklat |
 
-## Özel kanal listesi
+## Yayın kalitesi
 
-Mavi veya Ayarlar tuşuyla aşağıdaki biçimde bir HTTPS JSON adresi tanımlanabilir:
+Uygulama, kaynakta bulunan en iyi uyarlanabilir akışı Media3'e verir. 20 Temmuz 2026 taramasında site oynatıcılarının 212 tanesi doğrudan HLS yayın sağladı; TRT ve bazı ek doğrulanmış kanallar tercih edilen doğrudan yayınlarla açılır. Kalan kanallar kaynak olarak YouTube, dış iframe veya yayıncının kendi oynatıcısını kullanır. Uygulama bunları reklamlı katalog sayfası yerine doğrudan tam ekran kaynak oynatıcısında açar.
 
-```json
-[
-  {"number": 1, "name": "Kanal Adı", "url": "https://example.com/live/master.m3u8"}
-]
-```
-
-Yalnızca HTTPS kayıtları kabul edilir ve kayıtlar `number` alanına göre sıralanır. Özel adres yanıt vermezse web kataloğu, o da kullanılamazsa önbellek ve yerleşik TRT listesi kullanılır.
+Bir yayıncının yalnızca SD yayın vermesi, coğrafi engel koyması veya yayını kapatması durumunda uygulama görüntüyü yapay olarak HD'ye çeviremez. Liste ve sıra korunur; yayın kalitesi ve erişilebilirlik yayın sahibine bağlıdır.
 
 ## Derleme
 
 Gereksinimler: JDK 17, Android SDK 35 ve Gradle 8.9.
 
 ```shell
-gradle assembleRelease
+gradle :app:assembleDebug
 ```
 
-İmzalama anahtarı depoya eklenmez. Yerel sürüm APK'sı Android APK Signature Scheme v1, v2 ve v3 ile imzalanmıştır.
-
-## Teknik yapı
-
-- Java
-- Android SDK 35, minimum Android 6.0 (API 23)
-- AndroidX AppCompat
-- AndroidX Media3 ExoPlayer + HLS
-- Android WebView
-- `ChannelRepository`: uzak JSON, web keşfi, önbellek ve yerleşik kaynak zinciri
-- `MainActivity`: tam ekran oynatma, kumanda olayları, kanal listesi ve favoriler
+GitHub Actions başarılı olduğunda kurulabilir debug APK, `TurkiyeTV-debug` adıyla iş akışı çıktısına eklenir.
 
 ## Gizlilik
 
-Uygulama kullanıcı hesabı, konum, kişi, mikrofon veya kamera verisi istemez. Yalnızca kanal listesini ve yayınları almak için internet izni kullanır. Favoriler, özel liste adresi ve son başarılı katalog cihazdaki uygulama tercihlerinde saklanır.
+Uygulama hesap, konum, kişi, kamera veya mikrofon izni istemez. Yalnızca kanal kataloğu ve yayınları için internet erişimi kullanır. Ayarlar, son kanal ve son eksiksiz katalog cihazda saklanır.
 
-## Sınırlamalar
+## Lisans ve yayın hakları
 
-- Uygulama yayın içeriğinin sahibi veya dağıtıcısı değildir.
-- Üçüncü taraf web oynatıcılarının kullanılabilirliği, reklamları ve yayın kalitesi ilgili siteye bağlıdır.
-- Spor ve benzeri içerikler coğrafi/yayın hakkı nedeniyle kanal tarafından engellenebilir.
-- Türksat'ın uydu üzerinden gönderdiği TKGS sırası internete açık bir API olmadığından, bu sürümde kullanıcı tarafından onaylanan web sırası uygulanır.
-
-## Lisans
-
-Kaynak kod MIT Lisansı ile sunulur. Kanal logoları, adları, yayınları ve üçüncü taraf siteler kendi sahiplerine aittir.
+Kaynak kod MIT lisanslıdır. Uygulama yayın içeriğinin sahibi veya dağıtıcısı değildir. Kanal adları, yayınlar ve üçüncü taraf oynatıcılar kendi sahiplerine aittir.
