@@ -1,23 +1,22 @@
 package tv.kaya.turksat;
 
-import android.graphics.Color;
 import android.app.AlertDialog;
+import android.content.Context;
+import android.graphics.Color;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.InputType;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
-import android.webkit.WebChromeClient;
-import android.webkit.WebResourceError;
-import android.webkit.WebResourceRequest;
-import android.webkit.WebSettings;
-import android.webkit.WebView;
-import android.webkit.WebViewClient;
+import android.view.inputmethod.InputMethodManager;
+import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
+import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -30,9 +29,12 @@ import androidx.media3.common.util.UnstableApi;
 import androidx.media3.datasource.DefaultHttpDataSource;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
+import androidx.media3.ui.AspectRatioFrameLayout;
 import androidx.media3.ui.PlayerView;
 
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -46,6 +48,7 @@ public final class MainActivity extends AppCompatActivity {
     private static final String STARTUP_MODE_KEY = "startup_mode";
     private static final String STARTUP_AUTOPLAY_KEY = "startup_autoplay";
     private static final String INFO_SECONDS_KEY = "info_seconds";
+    private static final String ASPECT_MODE_KEY = "aspect_mode";
     private static final String SITE_ORIGIN = "https://www.canlitv.diy";
     private static final String PLAYER_USER_AGENT =
             "Mozilla/5.0 (Linux; Android 12; Android TV) "
@@ -61,24 +64,32 @@ public final class MainActivity extends AppCompatActivity {
     private FrameLayout root;
     private PlayerView playerView;
     private ExoPlayer player;
-    private WebView webView;
+    private FrameLayout loadingOverlay;
     private LinearLayout channelPanel;
     private LinearLayout settingsPanel;
+    private LinearLayout settingsList;
     private ScrollView channelScroll;
     private LinearLayout channelList;
     private TextView channelCount;
     private TextView channelInfo;
     private TextView numberEntry;
     private TextView loadingMessage;
+    private ProgressBar loadingSpinner;
+    private TextView clockView;
+    private TextView channelSearchButton;
+    private TextView channelSettingsButton;
     private TextView startupSetting;
     private TextView autoplaySetting;
     private TextView infoSetting;
+    private TextView aspectSetting;
+    private AlertDialog searchDialog;
 
     private int currentIndex;
     private int tuneGeneration;
+    private int automaticRetryCount;
     private boolean waitingForManualStart;
-    private View customWebView;
-    private WebChromeClient.CustomViewCallback customViewCallback;
+    private boolean resumePlaybackOnStart;
+    private String searchQuery = "";
 
     private final Runnable tuneEnteredNumber = () -> {
         if (numberBuffer.length() == 0) {
@@ -90,7 +101,21 @@ public final class MainActivity extends AppCompatActivity {
         tuneNumber(number);
     };
 
-    private final Runnable hideChannelInfo = () -> channelInfo.setVisibility(View.GONE);
+    private final Runnable hideChannelInfo = () -> channelInfo.animate()
+            .alpha(0f)
+            .translationY(dp(12))
+            .setDuration(160)
+            .withEndAction(() -> channelInfo.setVisibility(View.GONE))
+            .start();
+    private final Runnable updateClock = new Runnable() {
+        @Override
+        public void run() {
+            if (clockView != null) {
+                clockView.setText(new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date()));
+            }
+            uiHandler.postDelayed(this, 30_000L);
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -114,17 +139,12 @@ public final class MainActivity extends AppCompatActivity {
         playerView.setShutterBackgroundColor(Color.BLACK);
         root.addView(playerView, fullScreenParams());
 
-        configureWebView();
-        root.addView(webView, fullScreenParams());
+        buildLoadingOverlay();
+        root.addView(loadingOverlay, fullScreenParams());
 
-        loadingMessage = text("Kanallar hazırlanıyor…", 24);
-        loadingMessage.setGravity(Gravity.CENTER);
-        loadingMessage.setBackgroundResource(R.drawable.status_background);
-        FrameLayout.LayoutParams loadingParams = new FrameLayout.LayoutParams(dp(420), dp(92), Gravity.CENTER);
-        root.addView(loadingMessage, loadingParams);
-
-        channelInfo = text("", 24);
+        channelInfo = text("", 23);
         channelInfo.setBackgroundResource(R.drawable.status_background);
+        channelInfo.setVisibility(View.GONE);
         FrameLayout.LayoutParams infoParams = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -139,94 +159,48 @@ public final class MainActivity extends AppCompatActivity {
         root.addView(numberEntry, new FrameLayout.LayoutParams(dp(190), dp(104), Gravity.CENTER));
 
         buildChannelPanel();
-        root.addView(channelPanel, new FrameLayout.LayoutParams(dp(390),
-                ViewGroup.LayoutParams.MATCH_PARENT, Gravity.START));
+        root.addView(channelPanel, new FrameLayout.LayoutParams(
+                dp(430), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.START));
         channelPanel.setVisibility(View.GONE);
 
         buildSettingsPanel();
-        root.addView(settingsPanel, new FrameLayout.LayoutParams(dp(430),
-                ViewGroup.LayoutParams.MATCH_PARENT, Gravity.END));
+        root.addView(settingsPanel, new FrameLayout.LayoutParams(
+                dp(460), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.END));
         settingsPanel.setVisibility(View.GONE);
 
         setContentView(root);
         buildPlayer();
+        applyAspectMode();
+        uiHandler.post(updateClock);
         root.requestFocus();
     }
 
-    private void configureWebView() {
-        webView = new WebView(this);
-        webView.setBackgroundColor(Color.BLACK);
-        webView.setVisibility(View.GONE);
-        webView.setFocusable(true);
+    private void buildLoadingOverlay() {
+        loadingOverlay = new FrameLayout(this);
+        loadingOverlay.setBackgroundColor(Color.BLACK);
+        loadingOverlay.setFocusable(false);
 
-        WebSettings settings = webView.getSettings();
-        settings.setJavaScriptEnabled(true);
-        settings.setDomStorageEnabled(true);
-        settings.setMediaPlaybackRequiresUserGesture(false);
-        settings.setLoadWithOverviewMode(true);
-        settings.setUseWideViewPort(true);
-        settings.setSupportZoom(false);
-        settings.setBuiltInZoomControls(false);
-        settings.setDisplayZoomControls(false);
-        settings.setSupportMultipleWindows(false);
-        settings.setUserAgentString(PLAYER_USER_AGENT);
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setGravity(Gravity.CENTER);
 
-        webView.setWebViewClient(new WebViewClient() {
-            @Override
-            public void onPageFinished(WebView view, String url) {
-                super.onPageFinished(view, url);
-                if (url.contains("canlitv.diy") && !url.contains("/player/")) {
-                    view.evaluateJavascript(
-                            "(function(){var p=document.getElementById('Player');"
-                                    + "if(p&&p.src){window.location.replace(p.src);}})();",
-                            null);
-                    return;
-                }
-                view.evaluateJavascript(
-                        "(function(){document.documentElement.style.background='#000';"
-                                + "document.body.style.background='#000';"
-                                + "document.body.style.margin='0';"
-                                + "document.body.style.overflow='hidden';"
-                                + "var tries=0;var isolate=setInterval(function(){tries++;"
-                                + "var t=document.querySelector('video,iframe[src*=youtube],"
-                                + "iframe[src*=vimeo],iframe[src*=player],iframe[src*=live]');"
-                                + "if(t&&!location.hostname.includes('youtube.com')){"
-                                + "clearInterval(isolate);document.body.innerHTML='';"
-                                + "t.style.position='fixed';t.style.inset='0';"
-                                + "t.style.width='100vw';t.style.height='100vh';t.style.border='0';"
-                                + "document.body.appendChild(t);if(t.tagName==='VIDEO'){"
-                                + "t.controls=false;t.autoplay=true;try{t.play();}catch(e){}}}"
-                                + "if(tries>20){clearInterval(isolate);}},250);"
-                                + "setTimeout(function(){if(typeof manualStart==='function')"
-                                + "{try{manualStart();}catch(e){}}},700);})()",
-                        null);
-                uiHandler.postDelayed(() -> showLoading(null), 900);
-            }
+        loadingSpinner = new ProgressBar(this);
+        loadingSpinner.getIndeterminateDrawable().setTint(0xffe30a17);
+        LinearLayout.LayoutParams spinnerParams = new LinearLayout.LayoutParams(dp(58), dp(58));
+        spinnerParams.gravity = Gravity.CENTER_HORIZONTAL;
+        spinnerParams.setMargins(0, 0, 0, dp(16));
+        content.addView(loadingSpinner, spinnerParams);
 
-            @Override
-            public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
-                super.onReceivedError(view, request, error);
-                if (request.isForMainFrame()) {
-                    showPlaybackError("Yayın sayfası açılamadı");
-                }
-            }
-        });
+        loadingMessage = text("Kanallar hazırlanıyor…", 25);
+        loadingMessage.setGravity(Gravity.CENTER);
+        loadingMessage.setBackgroundResource(R.drawable.status_background);
+        content.addView(loadingMessage, new LinearLayout.LayoutParams(dp(500), dp(104)));
 
-        webView.setWebChromeClient(new WebChromeClient() {
-            @Override
-            public void onShowCustomView(View view, CustomViewCallback callback) {
-                hideCustomWebView();
-                customWebView = view;
-                customViewCallback = callback;
-                root.addView(customWebView, fullScreenParams());
-                customWebView.requestFocus();
-            }
-
-            @Override
-            public void onHideCustomView() {
-                hideCustomWebView();
-            }
-        });
+        FrameLayout.LayoutParams loadingParams = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.CENTER);
+        loadingOverlay.addView(content, loadingParams);
     }
 
     private void buildPlayer() {
@@ -245,14 +219,23 @@ public final class MainActivity extends AppCompatActivity {
         player.addListener(new Player.Listener() {
             @Override
             public void onPlaybackStateChanged(int playbackState) {
-                if (playbackState == Player.STATE_READY) {
+                if (playbackState == Player.STATE_BUFFERING && !waitingForManualStart) {
+                    showLoading("Yayın yükleniyor…");
+                } else if (playbackState == Player.STATE_READY) {
+                    automaticRetryCount = 0;
                     showLoading(null);
+                    if (!channels.isEmpty()) {
+                        showChannelInfo(channels.get(currentIndex));
+                    }
+                    root.requestFocus();
+                } else if (playbackState == Player.STATE_ENDED) {
+                    showPlaybackError("Yayın sona erdi");
                 }
             }
 
             @Override
             public void onPlayerError(PlaybackException error) {
-                showPlaybackError("Bu kanalın yayını şu anda açılamıyor");
+                retryAfterPlayerError();
             }
         });
     }
@@ -260,49 +243,72 @@ public final class MainActivity extends AppCompatActivity {
     private void buildChannelPanel() {
         channelPanel = new LinearLayout(this);
         channelPanel.setOrientation(LinearLayout.VERTICAL);
-        channelPanel.setPadding(dp(22), dp(22), dp(18), dp(22));
+        channelPanel.setPadding(dp(22), dp(22), dp(18), dp(18));
         channelPanel.setBackgroundResource(R.drawable.panel_background);
 
+        LinearLayout titleRow = new LinearLayout(this);
+        titleRow.setOrientation(LinearLayout.HORIZONTAL);
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
+
         TextView title = text(getString(R.string.app_name), 27);
-        title.setTextColor(Color.WHITE);
         title.setTypeface(title.getTypeface(), android.graphics.Typeface.BOLD);
-        channelPanel.addView(title, new LinearLayout.LayoutParams(
+        titleRow.addView(title, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        clockView = text("--:--", 19);
+        clockView.setGravity(Gravity.CENTER);
+        clockView.setTextColor(0xffd9e2ef);
+        titleRow.addView(clockView, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        channelPanel.addView(titleRow, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         channelCount = text("Kanallar yükleniyor", 16);
         channelCount.setTextColor(0xffaab7c9);
         LinearLayout.LayoutParams countParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        countParams.setMargins(0, dp(2), 0, dp(16));
+        countParams.setMargins(0, dp(2), 0, dp(8));
         channelPanel.addView(channelCount, countParams);
+
+        channelSearchButton = addChannelAction("Kanal ara  ·  YEŞİL", this::showSearchDialog);
+        channelSettingsButton = addChannelAction("Ayarlar  ·  MAVİ", () -> showSettingsPanel(true));
+        channelSearchButton.setNextFocusDownId(channelSettingsButton.getId());
+        channelSettingsButton.setNextFocusUpId(channelSearchButton.getId());
 
         channelScroll = new ScrollView(this);
         channelScroll.setFillViewport(true);
         channelScroll.setVerticalScrollBarEnabled(false);
         channelScroll.setClipToPadding(false);
-        channelScroll.setPadding(0, dp(4), dp(4), dp(20));
+        channelScroll.setPadding(0, dp(4), dp(4), dp(10));
 
         channelList = new LinearLayout(this);
         channelList.setOrientation(LinearLayout.VERTICAL);
         channelScroll.addView(channelList, new ScrollView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        channelPanel.addView(channelScroll, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
+        scrollParams.setMargins(0, dp(4), 0, 0);
+        channelPanel.addView(channelScroll, scrollParams);
 
-        TextView settingsButton = text("⚙  Ayarlar", 18);
-        settingsButton.setFocusable(true);
-        settingsButton.setBackgroundResource(R.drawable.channel_row_background);
-        settingsButton.setOnFocusChangeListener(this::styleFocusedRow);
-        settingsButton.setOnClickListener(view -> showSettingsPanel(true));
-        LinearLayout.LayoutParams settingsButtonParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(54));
-        settingsButtonParams.setMargins(0, dp(6), dp(4), dp(8));
-        channelPanel.addView(settingsButton, settingsButtonParams);
-
-        TextView help = text("OK  Seç     →  Kapat     0–9  Kanal", 14);
+        TextView help = text("OK Seç  ·  SAĞ Kapat  ·  0–9 Kanal", 14);
         help.setTextColor(0xffaab7c9);
         channelPanel.addView(help, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+    }
+
+    private TextView addChannelAction(String label, Runnable action) {
+        TextView row = text(label, 18);
+        row.setId(View.generateViewId());
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setFocusable(true);
+        row.setBackgroundResource(R.drawable.channel_row_background);
+        row.setOnFocusChangeListener(this::styleFocusedRow);
+        row.setOnClickListener(view -> action.run());
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(50));
+        params.setMargins(0, 0, dp(4), dp(5));
+        channelPanel.addView(row, params);
+        return row;
     }
 
     private void buildSettingsPanel() {
@@ -315,23 +321,31 @@ public final class MainActivity extends AppCompatActivity {
         title.setTypeface(title.getTypeface(), android.graphics.Typeface.BOLD);
         settingsPanel.addView(title);
 
-        TextView subtitle = text("OK ile değiştir", 16);
+        TextView subtitle = text("OK ile değiştir  ·  MAVİ ile kapat", 16);
         subtitle.setTextColor(0xffaab7c9);
         LinearLayout.LayoutParams subtitleParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         subtitleParams.setMargins(0, 0, 0, dp(18));
         settingsPanel.addView(subtitle, subtitleParams);
 
+        ScrollView settingsScroll = new ScrollView(this);
+        settingsScroll.setFillViewport(true);
+        settingsScroll.setVerticalScrollBarEnabled(false);
+        settingsList = new LinearLayout(this);
+        settingsList.setOrientation(LinearLayout.VERTICAL);
+        settingsScroll.addView(settingsList, new ScrollView.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        settingsPanel.addView(settingsScroll, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+
         startupSetting = addSettingRow(() -> {
-            String current = getSharedPreferences(PREFS, 0)
-                    .getString(STARTUP_MODE_KEY, "last");
+            String current = getSharedPreferences(PREFS, 0).getString(STARTUP_MODE_KEY, "last");
             String next = "last".equals(current) ? "first" : "first".equals(current) ? "menu" : "last";
             getSharedPreferences(PREFS, 0).edit().putString(STARTUP_MODE_KEY, next).apply();
             refreshSettingLabels();
         });
         autoplaySetting = addSettingRow(() -> {
-            boolean current = getSharedPreferences(PREFS, 0)
-                    .getBoolean(STARTUP_AUTOPLAY_KEY, true);
+            boolean current = getSharedPreferences(PREFS, 0).getBoolean(STARTUP_AUTOPLAY_KEY, true);
             getSharedPreferences(PREFS, 0).edit().putBoolean(STARTUP_AUTOPLAY_KEY, !current).apply();
             refreshSettingLabels();
         });
@@ -341,27 +355,46 @@ public final class MainActivity extends AppCompatActivity {
             getSharedPreferences(PREFS, 0).edit().putInt(INFO_SECONDS_KEY, next).apply();
             refreshSettingLabels();
         });
+        aspectSetting = addSettingRow(() -> {
+            String current = getSharedPreferences(PREFS, 0).getString(ASPECT_MODE_KEY, "fit");
+            String next = "fit".equals(current) ? "zoom" : "zoom".equals(current) ? "fill" : "fit";
+            getSharedPreferences(PREFS, 0).edit().putString(ASPECT_MODE_KEY, next).apply();
+            applyAspectMode();
+            refreshSettingLabels();
+        });
+        addSettingRow(() -> {
+            showSettingsPanel(false);
+            retryCurrentChannel();
+        }).setText("Geçerli yayını yeniden başlat");
         addSettingRow(() -> {
             showSettingsPanel(false);
             loadChannels();
         }).setText("Kanal listesini yenile");
         addSettingRow(() -> Toast.makeText(this,
-                "Türkiye TV 3.0 • 285 kanallı Android TV oynatıcısı",
+                "Kırmızı: yenile  ·  Yeşil: ara  ·  Sarı: kanallar  ·  Mavi: ayarlar",
+                Toast.LENGTH_LONG).show()).setText("Kumanda tuş rehberi");
+        addSettingRow(() -> Toast.makeText(this,
+                "Türkiye TV 3.1.0 · Yerel Android TV oynatıcısı",
                 Toast.LENGTH_LONG).show()).setText("Uygulama hakkında");
         refreshSettingLabels();
+
+        TextView footer = text("SAĞ veya GERİ ile kapat", 14);
+        footer.setTextColor(0xffaab7c9);
+        settingsPanel.addView(footer, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
     }
 
     private TextView addSettingRow(Runnable action) {
-        TextView row = text("", 19);
+        TextView row = text("", 18);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setFocusable(true);
         row.setBackgroundResource(R.drawable.channel_row_background);
         row.setOnFocusChangeListener(this::styleFocusedRow);
         row.setOnClickListener(view -> action.run());
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(66));
-        params.setMargins(0, 0, 0, dp(7));
-        settingsPanel.addView(row, params);
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(58));
+        params.setMargins(0, 0, 0, dp(6));
+        settingsList.addView(row, params);
         settingsRows.add(row);
         return row;
     }
@@ -376,6 +409,23 @@ public final class MainActivity extends AppCompatActivity {
                 ? "Açık" : "Kapalı"));
         int seconds = getSharedPreferences(PREFS, 0).getInt(INFO_SECONDS_KEY, 5);
         infoSetting.setText("Kanal bilgisi  ·  " + (seconds == 0 ? "Kapalı" : seconds + " saniye"));
+        String aspect = getSharedPreferences(PREFS, 0).getString(ASPECT_MODE_KEY, "fit");
+        String aspectLabel = "zoom".equals(aspect) ? "Yakınlaştır" : "fill".equals(aspect)
+                ? "Doldur" : "Orijinal";
+        aspectSetting.setText("Görüntü oranı  ·  " + aspectLabel);
+    }
+
+    private void applyAspectMode() {
+        if (playerView == null) {
+            return;
+        }
+        String aspect = getSharedPreferences(PREFS, 0).getString(ASPECT_MODE_KEY, "fit");
+        int resizeMode = "zoom".equals(aspect)
+                ? AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                : "fill".equals(aspect)
+                ? AspectRatioFrameLayout.RESIZE_MODE_FILL
+                : AspectRatioFrameLayout.RESIZE_MODE_FIT;
+        playerView.setResizeMode(resizeMode);
     }
 
     private void loadChannels() {
@@ -385,6 +435,8 @@ public final class MainActivity extends AppCompatActivity {
             runOnUiThread(() -> {
                 channels.clear();
                 channels.addAll(loaded);
+                resolvedStreams.clear();
+                searchQuery = "";
                 rebuildChannelList();
 
                 if (channels.isEmpty()) {
@@ -399,12 +451,17 @@ public final class MainActivity extends AppCompatActivity {
     private void rebuildChannelList() {
         channelList.removeAllViews();
         channelRows.clear();
-        channelCount.setText(String.format(Locale.forLanguageTag("tr-TR"),
-                "%d kanal • OK ile seç", channels.size()));
+        String foldedQuery = foldSearch(searchQuery);
+        int visibleCount = 0;
 
         for (int i = 0; i < channels.size(); i++) {
             Channel channel = channels.get(i);
-            TextView row = text(String.format(Locale.ROOT, "%03d   %s", channel.number, channel.name), 21);
+            if (!foldedQuery.isEmpty() && !foldSearch(channel.name).contains(foldedQuery)) {
+                continue;
+            }
+            visibleCount++;
+            TextView row = text(formatChannelRow(i), 20);
+            row.setId(View.generateViewId());
             row.setGravity(Gravity.CENTER_VERTICAL);
             row.setSingleLine(true);
             row.setFocusable(true);
@@ -417,10 +474,42 @@ public final class MainActivity extends AppCompatActivity {
             });
 
             LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dp(58));
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(56));
             rowParams.setMargins(0, 0, 0, dp(5));
             channelList.addView(row, rowParams);
             channelRows.add(row);
+        }
+
+        if (visibleCount == 0) {
+            TextView empty = text("Eşleşen kanal bulunamadı", 18);
+            empty.setTextColor(0xffaab7c9);
+            empty.setGravity(Gravity.CENTER);
+            channelList.addView(empty, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(100)));
+        }
+
+        if (searchQuery.isEmpty()) {
+            channelCount.setText(String.format(Locale.forLanguageTag("tr-TR"),
+                    "%d kanal", channels.size()));
+            channelSearchButton.setText("Kanal ara  ·  YEŞİL");
+        } else {
+            channelCount.setText(String.format(Locale.forLanguageTag("tr-TR"),
+                    "%d/%d sonuç", visibleCount, channels.size()));
+            channelSearchButton.setText("Arama: " + searchQuery + "  ·  YEŞİL");
+        }
+    }
+
+    private String formatChannelRow(int index) {
+        Channel channel = channels.get(index);
+        return String.format(Locale.ROOT, "%s %03d   %s",
+                index == currentIndex ? "▶" : " ", channel.number, channel.name);
+    }
+
+    private void refreshChannelRows() {
+        for (TextView row : channelRows) {
+            if (row.getTag() instanceof Integer) {
+                row.setText(formatChannelRow((Integer) row.getTag()));
+            }
         }
     }
 
@@ -481,28 +570,29 @@ public final class MainActivity extends AppCompatActivity {
             return;
         }
         currentIndex = index;
+        refreshChannelRows();
         tuneGeneration++;
-        int generation = tuneGeneration;
+        automaticRetryCount = 0;
         Channel channel = channels.get(index);
 
-        hideCustomWebView();
+        uiHandler.removeCallbacks(hideChannelInfo);
+        channelInfo.setVisibility(View.GONE);
         player.stop();
-        webView.stopLoading();
-        webView.setVisibility(View.GONE);
-        playerView.setVisibility(View.VISIBLE);
+        player.clearMediaItems();
         getSharedPreferences(PREFS, 0).edit().putInt(LAST_CHANNEL_KEY, channel.number).apply();
-        showChannelInfo(channel);
+
         if (!startPlayback) {
             waitingForManualStart = true;
             showLoading("▶ tuşuna basarak yayını başlatın");
+            loadingSpinner.setVisibility(View.GONE);
             return;
         }
-        startChannelPlayback(channel, generation);
+        startChannelPlayback(channel, tuneGeneration);
     }
 
     private void startChannelPlayback(Channel channel, int generation) {
         waitingForManualStart = false;
-        showLoading("Yayın hazırlanıyor…");
+        showLoading("Yayın yükleniyor…");
 
         if (channel.isDirectStream()) {
             playStream(channel.playbackUrl);
@@ -521,36 +611,55 @@ public final class MainActivity extends AppCompatActivity {
                 if (generation != tuneGeneration) {
                     return;
                 }
-                if (resolvedUrl.contains(".m3u8") || resolvedUrl.contains(".mpd")) {
+                if (resolvedUrl != null && isAdaptiveStream(resolvedUrl)) {
                     resolvedStreams.put(channel.number, resolvedUrl);
                     playStream(resolvedUrl);
                 } else {
-                    playInWebView(channel, resolvedUrl);
+                    showPlaybackError("Bu kanal için yerel yayın bulunamadı");
                 }
             });
         }, "stream-resolver").start();
     }
 
     private void playStream(String url) {
-        webView.onPause();
-        webView.setVisibility(View.GONE);
-        playerView.setVisibility(View.VISIBLE);
         player.setMediaItem(MediaItem.fromUri(url));
         player.prepare();
         player.play();
         root.requestFocus();
     }
 
-    private void playInWebView(Channel channel, String resolvedUrl) {
-        player.stop();
-        playerView.setVisibility(View.GONE);
-        webView.setVisibility(View.VISIBLE);
-        webView.onResume();
-        showLoading("Uyumlu oynatıcı açılıyor…");
-        Map<String, String> headers = new HashMap<>();
-        headers.put("Referer", channel.pageUrl);
-        webView.loadUrl(resolvedUrl, headers);
-        root.requestFocus();
+    private void retryAfterPlayerError() {
+        if (channels.isEmpty()) {
+            showPlaybackError("Yayın açılamadı");
+            return;
+        }
+        if (automaticRetryCount < 1) {
+            automaticRetryCount++;
+            int generation = tuneGeneration;
+            Channel channel = channels.get(currentIndex);
+            resolvedStreams.remove(channel.number);
+            showLoading("Yayın yeniden deneniyor…");
+            uiHandler.postDelayed(() -> {
+                if (generation == tuneGeneration) {
+                    startChannelPlayback(channel, generation);
+                }
+            }, 1500);
+        } else {
+            showPlaybackError("Bu kanalın yayını şu anda açılamıyor");
+        }
+    }
+
+    private void retryCurrentChannel() {
+        if (channels.isEmpty()) {
+            return;
+        }
+        resolvedStreams.remove(channels.get(currentIndex).number);
+        tune(currentIndex);
+    }
+
+    private boolean isAdaptiveStream(String url) {
+        String value = url.toLowerCase(Locale.ROOT);
+        return value.contains(".m3u8") || value.contains(".mpd");
     }
 
     private void showChannelInfo(Channel channel) {
@@ -559,9 +668,14 @@ public final class MainActivity extends AppCompatActivity {
 
     private void showChannelInfo(Channel channel, boolean force) {
         channelInfo.setText(String.format(Locale.forLanguageTag("tr-TR"),
-                "%03d  %s\nOK: kanal listesi   P+ / P-: kanal değiştir",
+                "%03d  %s\nP+ / P-: kanal   Kırmızı: yenile   Yeşil: ara   Sarı: liste   Mavi: ayarlar",
                 channel.number, channel.name));
+        channelInfo.animate().cancel();
+        channelInfo.setAlpha(0f);
+        channelInfo.setTranslationY(dp(14));
         channelInfo.setVisibility(View.VISIBLE);
+        channelInfo.bringToFront();
+        channelInfo.animate().alpha(1f).translationY(0f).setDuration(190).start();
         uiHandler.removeCallbacks(hideChannelInfo);
         int seconds = getSharedPreferences(PREFS, 0).getInt(INFO_SECONDS_KEY, 5);
         if (seconds == 0 && !force) {
@@ -572,17 +686,25 @@ public final class MainActivity extends AppCompatActivity {
     }
 
     private void showPlaybackError(String message) {
-        showLoading(message + "\nP+ / P- ile başka kanal deneyin");
+        showLoading(message + "\nKIRMIZI ile yeniden deneyin veya P+ / P- kullanın");
+        loadingSpinner.setVisibility(View.GONE);
     }
 
     private void showLoading(String message) {
         if (message == null) {
-            loadingMessage.setVisibility(View.GONE);
+            loadingOverlay.animate().cancel();
+            loadingOverlay.animate().alpha(0f).setDuration(180).withEndAction(() -> {
+                loadingOverlay.setVisibility(View.GONE);
+                loadingOverlay.setAlpha(1f);
+            }).start();
             return;
         }
+        loadingOverlay.animate().cancel();
+        loadingOverlay.setAlpha(1f);
+        loadingSpinner.setVisibility(View.VISIBLE);
         loadingMessage.setText(message);
-        loadingMessage.setVisibility(View.VISIBLE);
-        loadingMessage.bringToFront();
+        loadingOverlay.setVisibility(View.VISIBLE);
+        loadingOverlay.bringToFront();
         numberEntry.bringToFront();
         channelPanel.bringToFront();
         settingsPanel.bringToFront();
@@ -590,40 +712,120 @@ public final class MainActivity extends AppCompatActivity {
 
     private void showSettingsPanel(boolean show) {
         if (show) {
-            hideCustomWebView();
+            channelPanel.animate().cancel();
             channelPanel.setVisibility(View.GONE);
+            settingsPanel.animate().cancel();
+            settingsPanel.setAlpha(0f);
+            settingsPanel.setTranslationX(dp(120));
             settingsPanel.setVisibility(View.VISIBLE);
             settingsPanel.bringToFront();
             refreshSettingLabels();
+            settingsPanel.animate().alpha(1f).translationX(0f).setDuration(190).start();
             if (!settingsRows.isEmpty()) {
                 settingsRows.get(0).requestFocus();
             }
         } else {
-            settingsPanel.setVisibility(View.GONE);
-            root.requestFocus();
+            settingsPanel.animate().cancel();
+            if (settingsPanel.getVisibility() == View.VISIBLE) {
+                settingsPanel.animate().alpha(0f).translationX(dp(100)).setDuration(150)
+                        .withEndAction(() -> {
+                            settingsPanel.setVisibility(View.GONE);
+                            settingsPanel.setTranslationX(0f);
+                            settingsPanel.setAlpha(1f);
+                            root.requestFocus();
+                        }).start();
+            } else {
+                root.requestFocus();
+            }
         }
     }
 
     private void showChannelPanel(boolean show) {
         if (show) {
-            hideCustomWebView();
+            settingsPanel.animate().cancel();
+            settingsPanel.setVisibility(View.GONE);
+            channelPanel.animate().cancel();
+            channelPanel.setAlpha(0f);
+            channelPanel.setTranslationX(-dp(120));
             channelPanel.setVisibility(View.VISIBLE);
             channelPanel.bringToFront();
-            if (!channelRows.isEmpty()) {
-                TextView row = channelRows.get(Math.min(currentIndex, channelRows.size() - 1));
-                row.requestFocus();
-                channelScroll.post(() -> channelScroll.smoothScrollTo(0,
-                        Math.max(0, row.getTop() - dp(150))));
+            channelPanel.animate().alpha(1f).translationX(0f).setDuration(190).start();
+
+            TextView targetRow = channelRows.isEmpty() ? null : channelRows.get(0);
+            if (targetRow != null) {
+                targetRow.setNextFocusUpId(channelSettingsButton.getId());
+                channelSettingsButton.setNextFocusDownId(targetRow.getId());
+                channelScroll.post(() -> channelScroll.smoothScrollTo(0, 0));
             }
+            channelSearchButton.requestFocus();
         } else {
-            channelPanel.setVisibility(View.GONE);
-            root.requestFocus();
+            channelPanel.animate().cancel();
+            if (channelPanel.getVisibility() == View.VISIBLE) {
+                channelPanel.animate().alpha(0f).translationX(-dp(100)).setDuration(150)
+                        .withEndAction(() -> {
+                            channelPanel.setVisibility(View.GONE);
+                            channelPanel.setTranslationX(0f);
+                            channelPanel.setAlpha(1f);
+                            root.requestFocus();
+                        }).start();
+            } else {
+                root.requestFocus();
+            }
         }
+    }
+
+    private void showSearchDialog() {
+        if (searchDialog != null && searchDialog.isShowing()) {
+            return;
+        }
+        final EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setHint("Kanal adı");
+        input.setText(searchQuery);
+        input.setSelectAllOnFocus(true);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        int padding = dp(20);
+        input.setPadding(padding, padding, padding, padding);
+
+        searchDialog = new AlertDialog.Builder(this)
+                .setTitle("Kanal ara")
+                .setView(input)
+                .setPositiveButton("Ara", (dialog, which) -> applySearch(input.getText().toString()))
+                .setNeutralButton("Temizle", (dialog, which) -> applySearch(""))
+                .setNegativeButton("İptal", null)
+                .create();
+        searchDialog.setOnShowListener(ignored -> {
+            input.requestFocus();
+            searchDialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
+            InputMethodManager keyboard = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+            keyboard.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT);
+        });
+        searchDialog.setOnDismissListener(ignored -> searchDialog = null);
+        searchDialog.show();
+    }
+
+    private void applySearch(String query) {
+        searchQuery = query == null ? "" : query.trim();
+        rebuildChannelList();
+        showChannelPanel(true);
+    }
+
+    private String foldSearch(String value) {
+        return value.toUpperCase(Locale.forLanguageTag("tr-TR"))
+                .replace("İ", "I")
+                .replace("Ş", "S")
+                .replace("Ğ", "G")
+                .replace("Ü", "U")
+                .replace("Ö", "O")
+                .replace("Ç", "C")
+                .replaceAll("[^A-Z0-9]", "");
     }
 
     private void tuneNumber(int number) {
         int index = findChannelIndex(number);
         if (index >= 0 && index < channels.size() && channels.get(index).number == number) {
+            searchQuery = "";
+            rebuildChannelList();
             showChannelPanel(false);
             tune(index);
         } else {
@@ -638,17 +840,6 @@ public final class MainActivity extends AppCompatActivity {
             }
         }
         return 0;
-    }
-
-    private void hideCustomWebView() {
-        if (customWebView != null) {
-            root.removeView(customWebView);
-            customWebView = null;
-        }
-        if (customViewCallback != null) {
-            customViewCallback.onCustomViewHidden();
-            customViewCallback = null;
-        }
     }
 
     private TextView text(String value, int sizeSp) {
@@ -682,11 +873,33 @@ public final class MainActivity extends AppCompatActivity {
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
+        if (searchDialog != null && searchDialog.isShowing()) {
+            return super.dispatchKeyEvent(event);
+        }
         if (event.getAction() != KeyEvent.ACTION_DOWN) {
             return super.dispatchKeyEvent(event);
         }
 
         int key = event.getKeyCode();
+        if (key == KeyEvent.KEYCODE_PROG_RED) {
+            showChannelPanel(false);
+            showSettingsPanel(false);
+            retryCurrentChannel();
+            return true;
+        }
+        if (key == KeyEvent.KEYCODE_PROG_GREEN || key == KeyEvent.KEYCODE_SEARCH) {
+            showSearchDialog();
+            return true;
+        }
+        if (key == KeyEvent.KEYCODE_PROG_YELLOW) {
+            showChannelPanel(channelPanel.getVisibility() != View.VISIBLE);
+            return true;
+        }
+        if (key == KeyEvent.KEYCODE_PROG_BLUE || key == KeyEvent.KEYCODE_SETTINGS) {
+            showSettingsPanel(settingsPanel.getVisibility() != View.VISIBLE);
+            return true;
+        }
+
         if (key >= KeyEvent.KEYCODE_0 && key <= KeyEvent.KEYCODE_9) {
             numberBuffer.append(key - KeyEvent.KEYCODE_0);
             if (numberBuffer.length() > 3) {
@@ -700,14 +913,8 @@ public final class MainActivity extends AppCompatActivity {
             return true;
         }
 
-        if (customWebView != null && key == KeyEvent.KEYCODE_BACK) {
-            hideCustomWebView();
-            return true;
-        }
-
         if (settingsPanel.getVisibility() == View.VISIBLE) {
-            if (key == KeyEvent.KEYCODE_BACK || key == KeyEvent.KEYCODE_DPAD_RIGHT
-                    || key == KeyEvent.KEYCODE_SETTINGS || key == KeyEvent.KEYCODE_PROG_BLUE) {
+            if (key == KeyEvent.KEYCODE_BACK || key == KeyEvent.KEYCODE_DPAD_RIGHT) {
                 showSettingsPanel(false);
                 return true;
             }
@@ -756,10 +963,6 @@ public final class MainActivity extends AppCompatActivity {
             showChannelInfo(channels.get(currentIndex), true);
             return true;
         }
-        if (key == KeyEvent.KEYCODE_SETTINGS || key == KeyEvent.KEYCODE_PROG_BLUE) {
-            showSettingsPanel(true);
-            return true;
-        }
         if (key == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
                 || key == KeyEvent.KEYCODE_MEDIA_PLAY
                 || key == KeyEvent.KEYCODE_MEDIA_PAUSE) {
@@ -767,22 +970,10 @@ public final class MainActivity extends AppCompatActivity {
                 startChannelPlayback(channels.get(currentIndex), tuneGeneration);
                 return true;
             }
-            if (playerView.getVisibility() == View.VISIBLE) {
-                if (player.isPlaying()) {
-                    player.pause();
-                } else {
-                    player.play();
-                }
+            if (player.isPlaying()) {
+                player.pause();
             } else {
-                if (webView.getVisibility() != View.VISIBLE && !channels.isEmpty()) {
-                    startChannelPlayback(channels.get(currentIndex), tuneGeneration);
-                } else {
-                    webView.evaluateJavascript(
-                        "(function(){var v=document.querySelector('video');"
-                                + "if(v){v.paused?v.play():v.pause();}"
-                                + "else if(typeof manualStart==='function'){manualStart();}})()",
-                        null);
-                }
+                player.play();
             }
             return true;
         }
@@ -792,8 +983,7 @@ public final class MainActivity extends AppCompatActivity {
     @Override
     protected void onStart() {
         super.onStart();
-        webView.onResume();
-        if (player != null && playerView.getVisibility() == View.VISIBLE) {
+        if (player != null && resumePlaybackOnStart) {
             player.play();
         }
     }
@@ -807,18 +997,21 @@ public final class MainActivity extends AppCompatActivity {
     @Override
     protected void onStop() {
         super.onStop();
-        player.pause();
-        webView.onPause();
+        resumePlaybackOnStart = player != null && player.isPlaying();
+        if (player != null) {
+            player.pause();
+        }
     }
 
     @Override
     protected void onDestroy() {
         uiHandler.removeCallbacksAndMessages(null);
-        hideCustomWebView();
-        webView.stopLoading();
-        webView.loadUrl("about:blank");
-        webView.destroy();
-        player.release();
+        if (searchDialog != null) {
+            searchDialog.dismiss();
+        }
+        if (player != null) {
+            player.release();
+        }
         super.onDestroy();
     }
 }

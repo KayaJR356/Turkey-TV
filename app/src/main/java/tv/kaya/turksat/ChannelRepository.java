@@ -13,9 +13,11 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -43,9 +45,6 @@ final class ChannelRepository {
     private static final Pattern IFRAME_URL = Pattern.compile(
             "<iframe[^>]+src=['\\\"]([^'\\\"]+)['\\\"]",
             Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
-    private static final Pattern ANY_HTTPS_URL = Pattern.compile(
-            "https://[^\\s\\\"'<>]+", Pattern.CASE_INSENSITIVE);
-
     private static final Map<String, String> PREFERRED_STREAMS = createPreferredStreams();
 
     private ChannelRepository() {
@@ -74,57 +73,72 @@ final class ChannelRepository {
             return channel.playbackUrl;
         }
         try {
-            String playerHtml = downloadText(channel.playbackUrl, channel.pageUrl);
-            String normalizedHtml = playerHtml
-                    .replace("\\/", "/")
-                    .replace("\\u0026", "&")
-                    .replace("&amp;", "&");
-            Matcher matcher = ADAPTIVE_STREAM_URL.matcher(normalizedHtml);
-            if (matcher.find()) {
-                return matcher.group();
-            }
-
-            Matcher iframeMatcher = IFRAME_URL.matcher(normalizedHtml);
-            while (iframeMatcher.find()) {
-                String iframeUrl = iframeMatcher.group(1);
-                if (iframeUrl.startsWith("//")) {
-                    iframeUrl = "https:" + iframeUrl;
-                } else if (iframeUrl.startsWith("/")) {
-                    iframeUrl = BASE_URL + iframeUrl;
-                }
-                if (iframeUrl.startsWith("https://") && !isTrackingUrl(iframeUrl)) {
-                    return withAutoplay(iframeUrl);
-                }
-            }
-
-            Matcher urlMatcher = ANY_HTTPS_URL.matcher(normalizedHtml);
-            while (urlMatcher.find()) {
-                String candidate = urlMatcher.group()
-                        .replaceAll("[),;]+$", "");
-                if (!isTrackingUrl(candidate)
-                        && !candidate.contains("canlitv.diy")
-                        && !candidate.contains("canlitv.tel")) {
-                    return candidate;
-                }
-            }
+            return resolveNativeStream(channel.playbackUrl, channel.pageUrl, 0, new HashSet<>());
         } catch (Exception ignored) {
-            // Keep the channel's own source player when direct stream resolution fails.
+            // Native playback is intentionally strict: never fall back to a web page.
         }
-        return channel.playbackUrl;
+        return null;
     }
 
-    private static boolean isTrackingUrl(String url) {
-        return url.contains("google")
-                || url.contains("doubleclick")
-                || url.contains("cloudflare")
-                || url.contains("w3.org");
+    private static String resolveNativeStream(
+            String source,
+            String referer,
+            int depth,
+            Set<String> visited) throws Exception {
+        if (source == null || depth > 3 || !source.startsWith("https://")
+                || isBrowserOnlySource(source) || !visited.add(source)) {
+            return null;
+        }
+        if (isAdaptiveStream(source)) {
+            return source;
+        }
+
+        String normalizedHtml = downloadText(source, referer)
+                .replace("\\/", "/")
+                .replace("\\u0026", "&")
+                .replace("&amp;", "&");
+        Matcher streamMatcher = ADAPTIVE_STREAM_URL.matcher(normalizedHtml);
+        while (streamMatcher.find()) {
+            String streamUrl = streamMatcher.group().replaceAll("[),;]+$", "");
+            if (streamUrl.startsWith("https://") && !isBrowserOnlySource(streamUrl)) {
+                return streamUrl;
+            }
+        }
+
+        Matcher iframeMatcher = IFRAME_URL.matcher(normalizedHtml);
+        while (iframeMatcher.find()) {
+            String iframeUrl = absoluteUrl(source, iframeMatcher.group(1));
+            String nestedStream = resolveNativeStream(iframeUrl, source, depth + 1, visited);
+            if (nestedStream != null) {
+                return nestedStream;
+            }
+        }
+        return null;
     }
 
-    private static String withAutoplay(String url) {
-        if (url.contains("youtube.com/embed/") && !url.contains("autoplay=")) {
-            return url + (url.contains("?") ? "&" : "?") + "autoplay=1";
+    private static String absoluteUrl(String base, String candidate) {
+        try {
+            if (candidate.startsWith("//")) {
+                return "https:" + candidate;
+            }
+            return new URL(new URL(base), candidate).toString();
+        } catch (Exception ignored) {
+            return "";
         }
-        return url;
+    }
+
+    private static boolean isAdaptiveStream(String url) {
+        String value = url.toLowerCase(Locale.ROOT);
+        return value.contains(".m3u8") || value.contains(".mpd");
+    }
+
+    private static boolean isBrowserOnlySource(String url) {
+        String value = url.toLowerCase(Locale.ROOT);
+        return value.contains("youtube.com")
+                || value.contains("youtu.be")
+                || value.contains("youtube-nocookie.com")
+                || value.contains("googlevideo.com")
+                || value.contains("doubleclick");
     }
 
     private static List<Channel> downloadCatalog() throws Exception {

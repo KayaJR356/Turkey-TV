@@ -28,8 +28,13 @@ Kaynak yayınların çözünürlüğü yayıncı tarafından belirlenir. Kabul t
 5. `Program + / -` ile kanal değiştirin.
 6. `2`, ardından kısa bekleme ile Show TV'ye; `285` ile Türkmen Sport Tv'ye gidin.
 7. OK ile listeyi açın, yön tuşlarıyla ekran dışındaki satırlara ilerleyin ve OK ile seçin.
-8. Ayarlar/Mavi tuşuyla ayar panelini açıp tüm seçenekleri değiştirin.
-9. Doğrudan HLS, YouTube ve dış iframe kullanan örnek kanalları sınayın.
-10. Uygulamayı kapatıp açarak son kanal ve ayarların korunduğunu doğrulayın.
-11. İnterneti kapatıp daha önce kaydedilen eksiksiz katalogla açılışı doğrulayın.
-12. Temiz kurulumda internet yokken kısmi kanal listesi yerine görünür hata gösterildiğini doğrulayın.
+8. Kanal panelinin üstündeki sabit Ayarlar satırını yön tuşlarıyla seçin; Mavi tuşla da doğrudan açın.
+9. Yeşil tuşla kanal adına göre arama yapın, aramayı temizleyin ve doğru kanal numarasının korunduğunu doğrulayın.
+10. Kırmızı, Yeşil, Sarı ve Mavi tuş görevlerini ayrı ayrı sınayın.
+11. Doğrudan HLS, YouTube ve dış iframe kullanan örnekleri açın; uygulamanın hiçbirinde web sayfası/YouTube göstermediğini doğrulayın.
+12. Kanal değişiminde yayın hazır olana kadar siyah ekran ve `Yayın yükleniyor…` mesajını doğrulayın.
+13. Görüntü oranını Orijinal, Yakınlaştır ve Doldur arasında değiştirin.
+14. Panel, kanal bilgisi ve splash geçişlerinin akıcı; mevcut kanal ve saatin görünür olduğunu doğrulayın.
+15. Uygulamayı kapatıp açarak splash ekranını, son kanalı ve ayarların korunduğunu doğrulayın.
+16. İnterneti kapatıp daha önce kaydedilen eksiksiz katalogla açılışı doğrulayın.
+17. Temiz kurulumda internet yokken kısmi kanal listesi yerine görünür hata gösterildiğini doğrulayın.
