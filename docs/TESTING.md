@@ -1,24 +1,35 @@
-# Doğrulama notları
+# Doğrulama
 
-## Otomatik/yerel kontroller
+## Otomatik kontroller
 
-- `clean assembleRelease`: başarılı
-- Android Lint Vital: başarılı
-- R8 küçültme ve kaynak daraltma: başarılı
-- APK zipalign: başarılı
-- APK imza doğrulama: v1, v2 ve v3 başarılı
-- Web katalog ayrıştırma: 20 Temmuz 2026 tarihinde 285 benzersiz kanal
-- Dokuz resmî TRT HLS uç noktası: HTTP 200
+GitHub Actions her push ve pull request için şunları çalıştırır:
 
-## TV üzerinde kabul testi
+- `:app:assembleDebug`
+- `:app:lint`
+- Derlenen debug APK'yı `TurkiyeTV-debug` iş akışı çıktısı olarak yükleme
 
-1. APK'yı yükleyin ve uygulamayı Android TV uygulama satırından açın.
-2. İlk kanalın başladığını doğrulayın.
-3. `2`, ardından 1,3 saniye bekleyerek Show TV'ye geçildiğini doğrulayın.
-4. `285` girerek son kanala gidin.
-5. Kanal `+/-`, Yukarı/Aşağı ve OK ile liste davranışını sınayın.
-6. Listede ekran dışındaki kanallara D-pad ile ilerleyin.
-7. Kırmızı tuşla favoriyi açıp kapatın.
-8. Web kanalında Yeşil/Bilgi tuşuyla yayın akışını açıp kapatın.
-9. Uygulamayı kapatıp yeniden açarak kataloğun güncellendiğini doğrulayın.
-10. İnterneti kapatıp son başarılı önbellekle listenin açıldığını doğrulayın.
+## Katalog araştırması — 20 Temmuz 2026
+
+- Katalog satırı: 285
+- Benzersiz kanal adı: 285
+- Kaynak oynatıcı sayfası başarıyla okunan kayıt: 285
+- Doğrudan HLS bulunan site oynatıcısı: 212
+- YouTube, dış iframe veya yayıncı sayfası kullanan kayıt: 73
+- Katalog sırası: TRT 1 ile başlayıp Türkmen Sport Tv ile bitiyor
+
+Kaynak yayınların çözünürlüğü yayıncı tarafından belirlenir. Kabul testinde uygulamanın seçtiği oynatma yolu ve TV odak davranışı ayrıca doğrulanmalıdır.
+
+## Android TV kabul testi
+
+1. Uygulamayı TV başlatıcısındaki yeni Türkiye TV banner'ından açın.
+2. İlk açılış seçeneklerinin yalnızca bir kez gösterildiğini doğrulayın.
+3. Son izlenen, 1. kanal ve kanal listesi başlangıç seçeneklerini ayrı ayrı sınayın.
+4. İzleme ekranında dört yön tuşunun kanal değiştirmediğini doğrulayın.
+5. `Program + / -` ile kanal değiştirin.
+6. `2`, ardından kısa bekleme ile Show TV'ye; `285` ile Türkmen Sport Tv'ye gidin.
+7. OK ile listeyi açın, yön tuşlarıyla ekran dışındaki satırlara ilerleyin ve OK ile seçin.
+8. Ayarlar/Mavi tuşuyla ayar panelini açıp tüm seçenekleri değiştirin.
+9. Doğrudan HLS, YouTube ve dış iframe kullanan örnek kanalları sınayın.
+10. Uygulamayı kapatıp açarak son kanal ve ayarların korunduğunu doğrulayın.
+11. İnterneti kapatıp daha önce kaydedilen eksiksiz katalogla açılışı doğrulayın.
+12. Temiz kurulumda internet yokken kısmi kanal listesi yerine görünür hata gösterildiğini doğrulayın.
