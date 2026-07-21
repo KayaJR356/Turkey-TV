@@ -4,6 +4,9 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 
+import androidx.media3.common.util.UnstableApi;
+
+@UnstableApi
 public final class BootReceiver extends BroadcastReceiver {
     private static final String PREFS = "tv_settings";
     private static final String AUTO_LAUNCH_KEY = "auto_launch_on_boot";
