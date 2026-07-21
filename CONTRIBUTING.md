@@ -1,63 +1,89 @@
-# Türkiye TV'ye Katkı Sağlama
+# Türkiye TV'ye katkı sağlama
 
-Katkınız için teşekkürler. Bu rehber, değişikliklerin küçük, doğrulanabilir ve incelemesi kolay kalmasını amaçlar.
+Türkiye TV'yi geliştirmeye ayırdığınız zaman için teşekkürler. Bu rehber, katkıların güvenli, incelenebilir ve proje kapsamıyla uyumlu kalmasını sağlar.
 
 ## Başlamadan önce
 
-- Destek talepleri için [SUPPORT.md](SUPPORT.md) dosyasını kullanın.
-- Güvenlik açıklarını public issue olarak açmayın; [SECURITY.md](SECURITY.md) politikasını izleyin.
-- Anlamlı davranış değişiklikleri için önce bir issue açın.
-- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) kurallarına uyun.
+- [Davranış Kuralları](CODE_OF_CONDUCT.md) belgesini okuyun.
+- Güvenlik açıklarını issue olarak paylaşmayın; [Güvenlik Politikası](SECURITY.md) üzerinden bildirin.
+- Büyük değişiklikler için kod yazmadan önce bir feature request açın.
+- Yayın adresi veya üçüncü taraf içerik eklerken paylaşım hakkınız olduğundan emin olun.
+
+## Katkı türleri
+
+- Hata raporları ve tekrarlanabilir test senaryoları
+- Dokümantasyon ve erişilebilirlik iyileştirmeleri
+- TV kumandası, odak davranışı ve cihaz uyumluluğu düzeltmeleri
+- Test kapsamı ve güvenilirlik geliştirmeleri
+- Bakımcı tarafından onaylanan özellikler
 
 ## Geliştirme ortamı
 
-Gereksinimler:
+### Gereksinimler
 
+- Git
 - JDK 17
 - Android SDK 35
 - Gradle 8.9
 
+### Kurulum
+
 ```bash
-git clone https://github.com/KayaJR356/Turkey-TV.git
+git clone https://github.com/YOUR_USERNAME/Turkey-TV.git
 cd Turkey-TV
+gradle :app:assembleDebug
+```
+
+`YOUR_USERNAME` değerini GitHub kullanıcı adınızla değiştirin.
+
+## Önerilen iş akışı
+
+1. Uygun issue'yu açın veya mevcut bir issue seçin.
+2. Fork'unuzu güncel `main` branch'iyle eşitleyin.
+3. Tek amaca odaklanan bir branch oluşturun:
+
+   ```bash
+   git switch -c fix/kisa-aciklama
+   ```
+
+4. Küçük ve anlaşılır değişiklikler yapın.
+5. İlgili kontrolleri çalıştırın.
+6. Açıklayıcı commit mesajları kullanın.
+7. Pull request şablonunu doldurarak `main` branch'ine PR açın.
+
+## Doğrulama
+
+Pull request göndermeden önce en az şu kontrolleri çalıştırın:
+
+```bash
 gradle :app:assembleDebug :app:lint
 ```
 
-## Katkı akışı
+TV arayüzünü etkileyen değişikliklerde [docs/TESTING.md](docs/TESTING.md) kabul adımlarını uygun bir Android TV/Google TV cihazında veya emülatörde uygulayın.
 
-1. Repository'yi fork edin.
-2. Güncel `main` dalından açıklayıcı bir branch oluşturun.
-3. Tek bir probleme odaklanan değişiklik yapın.
-4. İlgili testleri ve dokümantasyonu güncelleyin.
-5. Derleme ve lint kontrollerini çalıştırın.
-6. Pull request şablonunu eksiksiz doldurun.
+## Commit ve pull request ilkeleri
 
-Örnek branch adları:
+- Her commit tek, anlamlı bir değişikliği temsil etmelidir.
+- Başlıkları kısa ve emir kipinde yazın; örnek: `Kanal aramasında odağı düzelt`.
+- PR açıklamasında motivasyonu, davranış değişikliğini ve doğrulama sonucunu belirtin.
+- Görsel değişikliklerde telifsiz veya sansürlenmiş önce/sonra görüntüsü ekleyin.
+- İlgili issue'yu `Closes #123` biçiminde bağlayın.
+- Kaynak kodla ilgisiz biçimlendirme değişikliklerini aynı PR'a karıştırmayın.
 
-```text
-fix/channel-focus
-docs/remote-controls
-feat/catalog-validation
-```
+## Hata raporları
 
-## Pull request kontrol listesi
+[Bug report formunu](https://github.com/KayaJR356/Turkey-TV/issues/new?template=bug_report.yml) kullanın ve şunları ekleyin:
 
-- Değişiklik kapsamı açık ve sınırlıdır.
-- Gereksiz biçimlendirme veya bağımlılık değişikliği yoktur.
-- `gradle :app:assembleDebug :app:lint` başarılıdır.
-- Kullanıcı davranışı değiştiyse README güncellenmiştir.
-- Yeni gizli bilgi, yayın anahtarı veya kişisel veri eklenmemiştir.
-- Üçüncü taraf içerik ve yayın hakları gözetilmiştir.
+- Uygulama sürümü veya commit SHA
+- Cihaz modeli ve Android sürümü
+- Tekrarlanabilir adımlar
+- Beklenen ve gerçekleşen davranış
+- Gizli veri içermeyen loglar
 
-## Commit mesajları
+## Özellik önerileri
 
-Kısa ve eylem odaklı mesajlar kullanın:
+[Feature request formunda](https://github.com/KayaJR356/Turkey-TV/issues/new?template=feature_request.yml) önce problemi açıklayın. Önerilen çözümün TV kumandası deneyimi, bakım yükü, güvenlik ve yayın hakları üzerindeki etkisini belirtin.
 
-```text
-fix: keep channel focus after refresh
-docs: explain remote control shortcuts
-```
+## Lisans
 
-## İnceleme
-
-Bakımcılar kapsam, doğruluk, güvenlik, TV kullanılabilirliği ve geriye dönük uyumluluğu değerlendirir. Geri bildirim istenmesi katkının reddedildiği anlamına gelmez.
+Katkı göndererek çalışmanızın repository'nin [MIT Lisansı](LICENSE) altında yayımlanmasını kabul etmiş olursunuz ve katkıyı sunma hakkına sahip olduğunuzu beyan edersiniz.
