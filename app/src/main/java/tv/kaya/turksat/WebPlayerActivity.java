@@ -1,14 +1,18 @@
 package tv.kaya.turksat;
 
 import android.annotation.SuppressLint;
+import android.app.PictureInPictureParams;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.net.Uri;
 import android.net.http.SslError;
 import android.os.Build;
 import android.os.Bundle;
+import android.util.Rational;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -36,6 +40,7 @@ public final class WebPlayerActivity extends AppCompatActivity {
     private static final String EXTRA_FALLBACK_URL = "channel_fallback_url";
     private static final String EXTRA_NAME = "channel_name";
     private static final String EXTRA_CHANNEL_DELTA = "channel_delta";
+    private static final String EXTRA_PLAYBACK_FAILED = "playback_failed";
 
     private FrameLayout root;
     private WebView webView;
@@ -55,6 +60,10 @@ public final class WebPlayerActivity extends AppCompatActivity {
 
     static int channelDelta(Intent result) {
         return result == null ? 0 : result.getIntExtra(EXTRA_CHANNEL_DELTA, 0);
+    }
+
+    static boolean playbackFailed(Intent result) {
+        return result != null && result.getBooleanExtra(EXTRA_PLAYBACK_FAILED, false);
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -209,6 +218,7 @@ public final class WebPlayerActivity extends AppCompatActivity {
         }
         Toast.makeText(this, "Yayın şu anda yanıt vermiyor; kanal listede tutuldu",
                 Toast.LENGTH_LONG).show();
+        setResult(RESULT_CANCELED, new Intent().putExtra(EXTRA_PLAYBACK_FAILED, true));
         finish();
     }
 
@@ -337,10 +347,39 @@ public final class WebPlayerActivity extends AppCompatActivity {
 
     @Override
     protected void onPause() {
-        if (webView != null) {
+        if (webView != null && (Build.VERSION.SDK_INT < Build.VERSION_CODES.O
+                || !isInPictureInPictureMode())) {
             webView.onPause();
         }
         super.onPause();
+    }
+
+    @Override
+    public void onUserLeaveHint() {
+        super.onUserLeaveHint();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && webView != null
+                && getSharedPreferences(ChannelUserData.PREFS, 0)
+                .getBoolean("pip_enabled", true)
+                && getPackageManager().hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) {
+            try {
+                enterPictureInPictureMode(new PictureInPictureParams.Builder()
+                        .setAspectRatio(new Rational(16, 9)).build());
+            } catch (RuntimeException ignored) {
+                // PiP support varies across Android TV firmware.
+            }
+        }
+    }
+
+    @Override
+    public void onPictureInPictureModeChanged(boolean inPictureInPictureMode,
+                                              Configuration newConfig) {
+        super.onPictureInPictureModeChanged(inPictureInPictureMode, newConfig);
+        if (progress != null) {
+            progress.setVisibility(inPictureInPictureMode ? View.GONE : View.VISIBLE);
+        }
+        if (!inPictureInPictureMode) {
+            enterImmersiveMode();
+        }
     }
 
     @Override

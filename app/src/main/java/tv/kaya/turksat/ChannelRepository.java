@@ -436,7 +436,9 @@ final class ChannelRepository {
             String playbackUrl = preferredStream != null
                     ? preferredStream
                     : String.format(Locale.ROOT, PLAYER_URL, playerId);
-            channels.add(new Channel(channels.size() + 1, name, playbackUrl, pageUrl));
+            Element categoryLink = row.selectFirst("a[data-kat]");
+            String category = categoryLink == null ? "" : categoryLink.attr("data-kat");
+            channels.add(new Channel(channels.size() + 1, name, playbackUrl, pageUrl, category));
         }
         return channels;
     }
@@ -510,6 +512,7 @@ final class ChannelRepository {
                 item.put("name", channel.name);
                 item.put("playbackUrl", channel.playbackUrl);
                 item.put("pageUrl", channel.pageUrl);
+                item.put("category", channel.sourceCategory);
                 array.put(item);
             }
             context.getSharedPreferences(PREFS, 0)
@@ -535,7 +538,8 @@ final class ChannelRepository {
                             item.getInt("number"),
                             item.getString("name"),
                             playbackUrl,
-                            pageUrl));
+                            pageUrl,
+                            item.optString("category", "")));
                 }
             }
         } catch (Exception ignored) {

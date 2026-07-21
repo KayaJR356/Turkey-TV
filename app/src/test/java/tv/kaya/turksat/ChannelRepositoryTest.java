@@ -14,7 +14,7 @@ public final class ChannelRepositoryTest {
                 + "<li class='featured tv ft_101'><a href='/tr/trt-1' "
                 + "title='TRT 1 canlı izle'>TRT</a></li>"
                 + "<li data-kind='live' class='ft_202 extra tv'><a href='show-tv'>"
-                + "<span>Show TV</span></a></li>"
+                + "<span>Show TV</span></a><a data-kat='spor'></a></li>"
                 + "<li class='tv ft_303'><a href='/tr/star-tv'><img alt='Star TV'></a></li>"
                 + "</ul>";
 
@@ -25,6 +25,7 @@ public final class ChannelRepositoryTest {
         assertEquals("TRT 1", channels.get(0).name);
         assertEquals("Show TV", channels.get(1).name);
         assertEquals("Star TV", channels.get(2).name);
+        assertEquals("Spor", channels.get(1).category());
         assertEquals("https://www.canlitv.diy/show-tv", channels.get(1).pageUrl);
         assertTrue(channels.get(0).isDirectStream());
         assertEquals("https://www.canlitv.diy/player/index.php?id=202&mobile=1",

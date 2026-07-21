@@ -16,20 +16,29 @@ public final class BootReceiver extends BroadcastReceiver {
     private static final String AUTO_LAUNCH_KEY = "auto_launch_on_boot";
     private static final String ACTION_DELAYED_BOOT =
             "tv.kaya.turksat.action.DELAYED_BOOT_LAUNCH";
+    private static final String ACTION_FINAL_BOOT =
+            "tv.kaya.turksat.action.FINAL_BOOT_LAUNCH";
+    private static final String ACTION_QUICK_BOOT = "android.intent.action.QUICKBOOT_POWERON";
+    private static final String ACTION_HTC_QUICK_BOOT = "com.htc.intent.action.QUICKBOOT_POWERON";
     private static final int DELAYED_BOOT_REQUEST = 3401;
+    private static final int FINAL_BOOT_REQUEST = 3402;
     private static final long DELAYED_BOOT_MS = 12_000L;
+    private static final long FINAL_BOOT_MS = 32_000L;
 
     @Override
     public void onReceive(Context context, Intent intent) {
         String action = intent == null ? null : intent.getAction();
-        if (!(Intent.ACTION_BOOT_COMPLETED.equals(action) || ACTION_DELAYED_BOOT.equals(action))
+        boolean bootSignal = Intent.ACTION_BOOT_COMPLETED.equals(action)
+                || ACTION_QUICK_BOOT.equals(action) || ACTION_HTC_QUICK_BOOT.equals(action);
+        boolean delayedSignal = ACTION_DELAYED_BOOT.equals(action) || ACTION_FINAL_BOOT.equals(action);
+        if (!(bootSignal || delayedSignal)
                 || !context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 .getBoolean(AUTO_LAUNCH_KEY, false)) {
             return;
         }
 
-        if (Intent.ACTION_BOOT_COMPLETED.equals(action)) {
-            scheduleDelayedLaunch(context);
+        if (bootSignal) {
+            scheduleDelayedLaunches(context);
         }
         launch(context);
     }
@@ -38,18 +47,24 @@ public final class BootReceiver extends BroadcastReceiver {
         if (!enabled) {
             AlarmManager alarms = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
             if (alarms != null) {
-                alarms.cancel(delayedBootIntent(context));
+                alarms.cancel(bootIntent(context, ACTION_DELAYED_BOOT, DELAYED_BOOT_REQUEST));
+                alarms.cancel(bootIntent(context, ACTION_FINAL_BOOT, FINAL_BOOT_REQUEST));
             }
         }
     }
 
-    private static void scheduleDelayedLaunch(Context context) {
+    private static void scheduleDelayedLaunches(Context context) {
         AlarmManager alarms = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
         if (alarms == null) {
             return;
         }
-        long triggerAt = SystemClock.elapsedRealtime() + DELAYED_BOOT_MS;
-        PendingIntent pendingIntent = delayedBootIntent(context);
+        schedule(alarms, SystemClock.elapsedRealtime() + DELAYED_BOOT_MS,
+                bootIntent(context, ACTION_DELAYED_BOOT, DELAYED_BOOT_REQUEST));
+        schedule(alarms, SystemClock.elapsedRealtime() + FINAL_BOOT_MS,
+                bootIntent(context, ACTION_FINAL_BOOT, FINAL_BOOT_REQUEST));
+    }
+
+    private static void schedule(AlarmManager alarms, long triggerAt, PendingIntent pendingIntent) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             alarms.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP,
                     triggerAt, pendingIntent);
@@ -58,9 +73,9 @@ public final class BootReceiver extends BroadcastReceiver {
         }
     }
 
-    private static PendingIntent delayedBootIntent(Context context) {
-        Intent retry = new Intent(context, BootReceiver.class).setAction(ACTION_DELAYED_BOOT);
-        return PendingIntent.getBroadcast(context, DELAYED_BOOT_REQUEST, retry,
+    private static PendingIntent bootIntent(Context context, String action, int requestCode) {
+        Intent retry = new Intent(context, BootReceiver.class).setAction(action);
+        return PendingIntent.getBroadcast(context, requestCode, retry,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
     }
 

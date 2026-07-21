@@ -12,6 +12,41 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr-TR/1.1.0/) yaklaşımın
 - Yapılandırılmış bug report ve feature request formları
 - Pull request şablonu
 
+## [3.5.0] - 2026-07-21
+
+### Added
+
+- Favori kanallar ve son izlenen 20 kanal filtresi
+- Kaynak katalog etiketlerine dayalı Ulusal, Haber, Spor, Çocuk, Belgesel, Dini ve Yerel kategorileri
+- Çevrimdışı önbellekli şimdi/sonra program rehberi ve sekiz programlık kanal akışı
+- Kanal satırlarında yerel, web ve geçici sorun yayın durumu
+- Otomatik, 480p, 720p ve 1080p yayın kalitesi sınırı
+- Yayında bulunan ses ve altyazı dillerini seçme
+- Android MediaSession sistem oynatma denetimi ve destekleyen cihazlarda görüntü içinde görüntü
+- Ebeveyn PIN'i, kanal kilidi ve oturumluk PIN doğrulaması
+- Favori, geçmiş, kilit ve uygulama ayarlarını JSON dosyasına yedekleme/geri yükleme
+- Kanal kategori ve XMLTV program rehberi eşleştirme birim testleri
+
+### Changed
+
+- Kanal rehberi kategori sekmeleri, iki satırlı program bilgisi ve daha küçük eylem satırlarıyla yeniden düzenlendi
+- Üst durum şeridi geçerli programı ve ilerleme yüzdesini gösteriyor
+- Kanalın Media3 metadatası sistem medya denetimlerinde kanal/program adıyla yayımlanıyor
+- Cihaz açılışında başlatma, üretici TV uygulamasına karşı 12 ve 32 saniyelik iki ek deneme yapıyor
+- GitHub Release notları güncel CHANGELOG sürümünden otomatik üretiliyor
+
+### Fixed
+
+- `TR -` önekli program rehberi kanal adlarının katalog adlarıyla eşleşmemesi
+- Kategorilerin yalnızca kanal adından tahmin edilmesi
+- Android 7 cihazlarında yeni koleksiyon yardımcılarının kullanılması
+
+### Security
+
+- Ebeveyn PIN'i cihazda rastgele tuz ve 50.000 turlu SHA-256 türetimiyle saklanıyor
+- XMLTV ayrıştırıcısında harici varlıklar ve DOCTYPE devre dışı bırakılıyor
+- İçe aktarılan yedek yalnızca izin verilen ayar anahtarlarını kabul ediyor ve 1 MB ile sınırlandırılıyor
+
 ## [3.4.0] - 2026-07-21
 
 ### Added
@@ -127,7 +162,8 @@ Bu kayıt `app/build.gradle` içindeki `versionName` ve repository commit geçmi
 
 Yeni bir release yayımlanırken tarih, karşılaştırma bağlantıları ve migration notları bu dosyaya eklenmelidir.
 
-[Unreleased]: https://github.com/KayaJR356/Turkey-TV/compare/v3.4.0...HEAD
+[Unreleased]: https://github.com/KayaJR356/Turkey-TV/compare/v3.5.0...HEAD
+[3.5.0]: https://github.com/KayaJR356/Turkey-TV/releases/tag/v3.5.0
 [3.4.0]: https://github.com/KayaJR356/Turkey-TV/releases/tag/v3.4.0
 [3.3.0]: https://github.com/KayaJR356/Turkey-TV/releases/tag/v3.3.0
 [3.2.0]: https://github.com/KayaJR356/Turkey-TV/releases/tag/v3.2.0

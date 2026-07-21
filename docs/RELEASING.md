@@ -27,9 +27,10 @@ yedeğini saklayın; kaybolursa kurulu uygulamalar yeni sürüme yükseltilemez.
 ## Yeni sürüm yayımlama
 
 1. `app/build.gradle` içindeki `versionCode` değerini artırın.
-2. `versionName` değerini yeni semantik sürüme ayarlayın (örneğin `3.4.0`).
-3. Değişikliği `main` dalına gönderin.
-4. `Publish signed app release` iş akışı imzalı APK ve SHA-256 dosyasını yayımlar.
+2. `versionName` değerini yeni semantik sürüme ayarlayın (örneğin `3.5.0`).
+3. `CHANGELOG.md` içinde aynı sürüm başlığını ve tarihi ekleyin; Release notları bu bölümden üretilir.
+4. Değişikliği `main` dalına gönderin.
+5. `Publish signed app release` iş akışı imzalı APK ve SHA-256 dosyasını yayımlar.
 
 Android 8 ve üzerinde kullanıcı ilk güncellemede bu uygulamaya “bilinmeyen uygulama yükleme”
 izni verir. Android paket yükleyicisi her güncellemede son kurulum onayını gösterir; normal bir
