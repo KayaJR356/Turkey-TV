@@ -1,13 +1,15 @@
 package tv.kaya.turksat;
 
 import android.content.Context;
-import android.text.Html;
 import android.util.Base64;
 
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Element;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -47,11 +49,8 @@ final class ChannelRepository {
                     + "AppleWebKit/537.36 (KHTML, like Gecko) "
                     + "Chrome/138.0.0.0 Safari/537.36";
 
-    private static final Pattern CHANNEL_BLOCK = Pattern.compile(
-            "<li\\s+class=['\\\"]ft_(\\d+)\\s+tv[^'\\\"]*['\\\"][^>]*>(.*?)</li>",
-            Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
-    private static final Pattern ANCHOR = Pattern.compile(
-            "<a\\s+([^>]+)>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+    private static final Pattern PLAYER_CLASS = Pattern.compile("^ft_(\\d+)$",
+            Pattern.CASE_INSENSITIVE);
     private static final Pattern MEDIA_STREAM_URL = Pattern.compile(
             "https?://[^\\s\\\"'<>\\\\]+?(?:\\.(?:m3u8|mpd|mp4)|/manifest)"
                     + "(?:\\?[^\\s\\\"'<>\\\\]*)?",
@@ -97,7 +96,8 @@ final class ChannelRepository {
 
     static String resolvePlaybackUrl(Channel channel, Set<String> excludedStreams) {
         Set<String> excluded = sanitizeExcludedStreams(excludedStreams);
-        if (channel.isDirectStream() && !excluded.contains(sanitizeUrl(channel.playbackUrl))) {
+        if (channel.isDirectStream() && !excluded.contains(sanitizeUrl(channel.playbackUrl))
+                && isStreamReachable(channel.playbackUrl, channel.pageUrl)) {
             return channel.playbackUrl;
         }
 
@@ -161,7 +161,8 @@ final class ChannelRepository {
         }
         if (isPlayableStream(source)) {
             String stream = sanitizeUrl(source);
-            return excluded.contains(stream) ? null : stream;
+            return excluded.contains(stream) || !isStreamReachable(stream, referer)
+                    ? null : stream;
         }
 
         String normalizedHtml = normalizeDocument(downloadText(source, referer));
@@ -192,7 +193,8 @@ final class ChannelRepository {
         }
 
         for (String candidate : candidates) {
-            if (isPlayableStream(candidate) && !excluded.contains(sanitizeUrl(candidate))) {
+            if (isPlayableStream(candidate) && !excluded.contains(sanitizeUrl(candidate))
+                    && isStreamReachable(candidate, source)) {
                 return candidate;
             }
         }
@@ -321,38 +323,136 @@ final class ChannelRepository {
                 || value.contains("doubleclick");
     }
 
-    private static List<Channel> downloadCatalog() throws Exception {
-        String html = downloadText(CATALOG_URL);
-        ArrayList<Channel> channels = new ArrayList<>();
-        Matcher blockMatcher = CHANNEL_BLOCK.matcher(html);
+    private static boolean isStreamReachable(String source, String referer) {
+        HttpURLConnection connection = null;
+        try {
+            URL url = new URL(source);
+            if (!"https".equalsIgnoreCase(url.getProtocol())) {
+                return false;
+            }
+            connection = (HttpURLConnection) url.openConnection();
+            connection.setConnectTimeout(4500);
+            connection.setReadTimeout(6500);
+            connection.setInstanceFollowRedirects(true);
+            connection.setRequestProperty("User-Agent", USER_AGENT);
+            connection.setRequestProperty("Accept-Language", "tr-TR,tr;q=0.9");
+            connection.setRequestProperty("Accept", "application/vnd.apple.mpegurl, "
+                    + "application/dash+xml, video/mp4, */*");
+            if (referer != null && referer.startsWith("https://")) {
+                connection.setRequestProperty("Referer", referer);
+            }
 
-        while (blockMatcher.find()) {
-            String playerId = blockMatcher.group(1);
-            Matcher anchorMatcher = ANCHOR.matcher(blockMatcher.group(2));
-            while (anchorMatcher.find()) {
-                String attributes = anchorMatcher.group(1);
-                String title = attribute(attributes, "title");
-                if (title == null || !title.toLowerCase(Locale.forLanguageTag("tr-TR"))
-                        .endsWith(" canlı izle")) {
-                    continue;
+            String lower = source.toLowerCase(Locale.ROOT);
+            boolean manifest = lower.contains(".m3u8") || lower.contains(".mpd")
+                    || lower.contains("format=m3u8") || lower.contains("format=mpd");
+            if (!manifest) {
+                connection.setRequestProperty("Range", "bytes=0-1");
+            }
+
+            int status = connection.getResponseCode();
+            if (status != HttpURLConnection.HTTP_OK
+                    && status != HttpURLConnection.HTTP_PARTIAL) {
+                return false;
+            }
+            if (!"https".equalsIgnoreCase(connection.getURL().getProtocol())) {
+                return false;
+            }
+            if (!manifest) {
+                return connection.getContentLength() != 0;
+            }
+
+            try (InputStream input = connection.getInputStream()) {
+                byte[] buffer = new byte[16 * 1024];
+                int read = input.read(buffer);
+                if (read <= 0) {
+                    return false;
                 }
-
-                String href = attribute(attributes, "href");
-                if (href == null || href.isEmpty()) {
-                    break;
-                }
-
-                String name = decodeHtml(title.substring(0, title.length() - " canlı izle".length()).trim());
-                String pageUrl = absoluteUrl(href);
-                String preferredStream = PREFERRED_STREAMS.get(normalize(name));
-                String playbackUrl = preferredStream != null
-                        ? preferredStream
-                        : String.format(Locale.ROOT, PLAYER_URL, playerId);
-                channels.add(new Channel(channels.size() + 1, name, playbackUrl, pageUrl));
-                break;
+                String header = new String(buffer, 0, read, StandardCharsets.UTF_8)
+                        .toLowerCase(Locale.ROOT);
+                return lower.contains(".mpd") || lower.contains("format=mpd")
+                        ? header.contains("<mpd") : header.contains("#extm3u");
+            }
+        } catch (Exception ignored) {
+            return false;
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
             }
         }
+    }
+
+    private static List<Channel> downloadCatalog() throws Exception {
+        return parseCatalogHtml(downloadText(CATALOG_URL));
+    }
+
+    static List<Channel> parseCatalogHtml(String html) {
+        ArrayList<Channel> channels = new ArrayList<>();
+        HashSet<String> seenPlayers = new HashSet<>();
+        if (html == null || html.isEmpty()) {
+            return channels;
+        }
+
+        for (Element row : Jsoup.parse(html, CATALOG_URL).select("li.tv")) {
+            String playerId = null;
+            for (String className : row.classNames()) {
+                Matcher matcher = PLAYER_CLASS.matcher(className);
+                if (matcher.matches()) {
+                    playerId = matcher.group(1);
+                    break;
+                }
+            }
+            if (playerId == null || seenPlayers.contains(playerId)) {
+                continue;
+            }
+
+            Element link = row.selectFirst("a[href]");
+            if (link == null) {
+                continue;
+            }
+            String pageUrl = trustedCatalogUrl(link.attr("href"));
+            if (pageUrl == null) {
+                continue;
+            }
+
+            String title = link.attr("title").trim();
+            String suffix = " canlı izle";
+            String name = title;
+            if (title.toLowerCase(Locale.forLanguageTag("tr-TR")).endsWith(suffix)) {
+                name = title.substring(0, title.length() - suffix.length()).trim();
+            }
+            if (name.isEmpty()) {
+                name = link.text().trim();
+            }
+            if (name.isEmpty()) {
+                Element image = link.selectFirst("img[alt]");
+                name = image == null ? "" : image.attr("alt").trim();
+            }
+            if (name.isEmpty()) {
+                continue;
+            }
+
+            seenPlayers.add(playerId);
+            String preferredStream = PREFERRED_STREAMS.get(normalize(name));
+            String playbackUrl = preferredStream != null
+                    ? preferredStream
+                    : String.format(Locale.ROOT, PLAYER_URL, playerId);
+            channels.add(new Channel(channels.size() + 1, name, playbackUrl, pageUrl));
+        }
         return channels;
+    }
+
+    private static String trustedCatalogUrl(String href) {
+        try {
+            URL url = new URL(new URL(CATALOG_URL), href);
+            String host = url.getHost().toLowerCase(Locale.ROOT);
+            if (!"https".equalsIgnoreCase(url.getProtocol())
+                    || !("canlitv.diy".equals(host) || "www.canlitv.diy".equals(host))) {
+                return null;
+            }
+            return url.toString();
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     private static String downloadText(String source) throws Exception {
@@ -388,25 +488,6 @@ final class ChannelRepository {
         } finally {
             connection.disconnect();
         }
-    }
-
-    private static String attribute(String attributes, String name) {
-        Pattern pattern = Pattern.compile(
-                "(?:^|\\s)" + Pattern.quote(name) + "\\s*=\\s*(['\\\"])(.*?)\\1",
-                Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
-        Matcher matcher = pattern.matcher(attributes);
-        return matcher.find() ? matcher.group(2) : null;
-    }
-
-    private static String decodeHtml(String value) {
-        return Html.fromHtml(value).toString().trim();
-    }
-
-    private static String absoluteUrl(String href) {
-        if (href.startsWith("https://")) {
-            return href;
-        }
-        return BASE_URL + (href.startsWith("/") ? href : "/" + href);
     }
 
     private static String normalize(String value) {

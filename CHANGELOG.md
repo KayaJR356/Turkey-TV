@@ -12,6 +12,44 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr-TR/1.1.0/) yaklaşımın
 - Yapılandırılmış bug report ve feature request formları
 - Pull request şablonu
 
+## [3.4.0] - 2026-07-21
+
+### Added
+
+- GitHub Release sürümlerini otomatik denetleyen uygulama içi güncelleme sistemi
+- APK boyutu ve SHA-256 özeti doğrulandıktan sonra Android paket yükleyicisini açma
+- Android TV Ayarlar panelinden elle güncelleme denetimi
+- Bütün katalog için arka planda yayın sağlık taraması
+- Kalıcı repository secret anahtarıyla imzalı Release APK üretme iş akışı
+- Yerel medya bulunamadığında kaynak sitenin oynatıcısını açan güvenli uygulama içi web fallback
+- Kaynak oynatıcı yanıt vermezse aynı kanalın katalog sayfasına otomatik ikinci web fallback
+- Katalog HTML değişikliklerini kapsayan jsoup ayrıştırıcı ve birim testleri
+- Bağlantı geri geldiğinde geçerli yayını otomatik yeniden deneme
+
+### Changed
+
+- HLS, DASH ve MP4 kaynakları oynatılmadan önce gerçek ağ yanıtıyla doğrulanıyor
+- Kaynak katalogdaki kanallar sağlık sonucu ne olursa olsun listede tutuluyor
+- Kanal sınıf sırası, bağlantı başlığı veya görünür ad biçimi değişse de katalog dayanıklı ayrıştırılıyor
+- TV arayüzü, kanal satırları ve açılış ekranı daha kompakt ve ekran boyutuna uyarlanabilir hâle getirildi
+- Cihaz açılışında başlatma, üretici TV uygulamasının öne geçmesine karşı gecikmeli ikinci deneme yapıyor
+- Web oynatıcıda `Program + / -` ile sonraki veya önceki kanala geçilebiliyor
+
+### Fixed
+
+- Sağlık taraması başarısız olan kanalların katalogdan eksilmesi
+- YouTube, dış iframe veya tarayıcı gerektiren kanalların hiç açılamaması
+- Bazı TV yazılımlarında cihaz açılışı seçeneğinin varsayılan TV uygulamasının arkasında kalması
+
+### Security
+
+- Güncelleme indirmeleri yalnızca HTTPS GitHub adresleriyle ve 250 MB sınırıyla kısıtlandı
+- APK, `FileProvider` içerik URI'siyle ve geçici okuma izniyle paket yükleyicisine aktarılıyor
+
+> [!IMPORTANT]
+> Önceki debug anahtarıyla kurulmuş APK'lar, yeni kalıcı anahtarla imzalanmış `v3.4.0` sürümüne
+> yerinde yükseltilemez. Kullanıcı eski paketi bir kez kaldırıp imzalı sürümü yeniden kurmalıdır.
+
 ## [3.3.0] - 2026-07-21
 
 ### Added
@@ -89,6 +127,7 @@ Bu kayıt `app/build.gradle` içindeki `versionName` ve repository commit geçmi
 
 Yeni bir release yayımlanırken tarih, karşılaştırma bağlantıları ve migration notları bu dosyaya eklenmelidir.
 
-[Unreleased]: https://github.com/KayaJR356/Turkey-TV/compare/v3.3.0...HEAD
+[Unreleased]: https://github.com/KayaJR356/Turkey-TV/compare/v3.4.0...HEAD
+[3.4.0]: https://github.com/KayaJR356/Turkey-TV/releases/tag/v3.4.0
 [3.3.0]: https://github.com/KayaJR356/Turkey-TV/releases/tag/v3.3.0
 [3.2.0]: https://github.com/KayaJR356/Turkey-TV/releases/tag/v3.2.0

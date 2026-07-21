@@ -7,8 +7,11 @@ GitHub Actions her push ve pull request için şunları çalıştırır:
 - `:app:assembleDebug`
 - `:app:lint`
 - Derlenen debug APK'yı `TurkiyeCanliTV-debug` iş akışı artifact'i olarak yükleme
+- `AppUpdateManager` sürüm karşılaştırması için yerel birim testleri
+- `ChannelRepository` katalog sınıf sırası, ad fallback'i, yinelenen kimlik ve güvenilmeyen bağlantı testleri
+- Sürüm iş akışında kalıcı anahtarla imzalı release APK ve SHA-256 üretimi
 
-## Katalog araştırması — 20 Temmuz 2026
+## Katalog araştırması — 21 Temmuz 2026
 
 - Katalog satırı: 285
 - Benzersiz kanal adı: 285
@@ -29,8 +32,8 @@ Aşağıdaki kaynak biçimlerini temsil eden, yayın hakkı bakımcı tarafında
 4. Percent-encoded medya URL'si
 5. `iframe src`, `data-src` veya `source src` içindeki medya
 6. Oynatıcı uç noktası başarısız olup kanal sayfasından bulunan medya
-7. YouTube/tarayıcı kaynağı — yerel URL uydurulmadan açık hata göstermeli
-8. Kapalı veya coğrafi engelli yayın — kontrollü hata ve yeniden deneme sunmalı
+7. YouTube/tarayıcı kaynağı — yerel URL uydurulmadan güvenli web oynatıcıya geçmeli
+8. Kapalı veya coğrafi engelli yayın — kanal listede kalmalı ve web fallback/yeniden deneme sunmalı
 
 ## Android TV kabul testi
 
@@ -53,6 +56,18 @@ Aşağıdaki kaynak biçimlerini temsil eden, yayın hakkı bakımcı tarafında
 17. Uygulamayı kapatıp açarak son kanal ve ayarların korunduğunu doğrulayın.
 18. İnterneti kapatıp daha önce kaydedilen eksiksiz katalogla açılışı doğrulayın.
 19. Temiz kurulumda internet yokken kısmi kanal listesi yerine görünür hata gösterildiğini doğrulayın.
+20. Sağlam bir kanalda manifest ön denetiminin ardından oynatmanın başladığını doğrulayın.
+21. Bilerek yerel akışı çözülemeyen bir kanalın listede kaldığını ve web oynatıcıya geçtiğini doğrulayın.
+22. Web oynatıcıda `Program + / -` ile katalogdaki sonraki ve önceki kanala geçildiğini doğrulayın.
+23. Ağ bağlantısını kesip geri getirerek geçerli yayının otomatik yenilendiğini doğrulayın.
+24. 720p, 1080p ve 4K görünüm alanlarında kanal/ayar panellerinin ekranın aşırı bölümünü kaplamadığını doğrulayın.
+25. `Cihaz açılışı` seçeneğini etkinleştirin; yeniden başlatmada ilk ve gecikmeli açılış denemelerinden
+    sonra uygulamanın üretici TV ekranının önünde kaldığını doğrulayın.
+26. Daha yüksek sürümlü test Release'i yayımlayın; açılış denetiminin güncelleme penceresini
+    gösterdiğini doğrulayın.
+27. APK indirmesinde ilerleme göstergesini, SHA-256 doğrulamasını, bilinmeyen uygulama izni
+    yönlendirmesini ve Android paket kurulum ekranını doğrulayın.
+28. Değiştirilmiş APK veya yanlış `.sha256` dosyasının kuruluma gönderilmediğini doğrulayın.
 
 ## Yayın doğrulama sınırı
 

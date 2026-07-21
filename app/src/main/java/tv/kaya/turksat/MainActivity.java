@@ -3,10 +3,17 @@ package tv.kaya.turksat;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.graphics.Color;
+import android.content.Intent;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
+import android.net.NetworkRequest;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.InputType;
+import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
@@ -48,6 +55,9 @@ import java.util.concurrent.Executors;
 
 @UnstableApi
 public final class MainActivity extends AppCompatActivity {
+    private static final float COMPACT_LAYOUT_SCALE = 0.82f;
+    private static final float COMPACT_TEXT_SCALE = 0.88f;
+    private static final int WEB_PLAYER_REQUEST = 3402;
     private static final String PREFS = "tv_settings";
     private static final String LAST_CHANNEL_KEY = "last_channel";
     private static final String ONBOARDING_KEY = "onboarding_complete";
@@ -71,6 +81,7 @@ public final class MainActivity extends AppCompatActivity {
     private final Map<Integer, Set<String>> failedStreams = new HashMap<>();
     private final Set<Integer> resolvingChannels = Collections.synchronizedSet(new HashSet<>());
     private final ExecutorService resolverExecutor = Executors.newFixedThreadPool(3);
+    private final ExecutorService healthExecutor = Executors.newFixedThreadPool(4);
 
     private FrameLayout root;
     private PlayerView playerView;
@@ -100,13 +111,19 @@ public final class MainActivity extends AppCompatActivity {
     private TextView infoSetting;
     private TextView aspectSetting;
     private AlertDialog searchDialog;
+    private AppUpdateManager appUpdateManager;
+    private ConnectivityManager connectivityManager;
+    private ConnectivityManager.NetworkCallback networkCallback;
 
     private int currentIndex;
     private int tuneGeneration;
     private int automaticRetryCount;
     private int loadingAnimationGeneration;
+    private int healthSweepGeneration;
     private boolean waitingForManualStart;
     private boolean resumePlaybackOnStart;
+    private boolean webFallbackOpen;
+    private volatile boolean networkUnavailable;
     private String searchQuery = "";
     private String activeStreamUrl;
 
@@ -155,10 +172,13 @@ public final class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        appUpdateManager = new AppUpdateManager(this);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         enterImmersiveMode();
         buildUi();
+        registerNetworkMonitoring();
         loadChannels();
+        appUpdateManager.checkForUpdates(false);
     }
 
     private void buildUi() {
@@ -332,7 +352,7 @@ public final class MainActivity extends AppCompatActivity {
                     root.requestFocus();
                 } else if (playbackState == Player.STATE_ENDED) {
                     setLiveState("SONA ERDİ");
-                    showPlaybackError("Yayın sona erdi");
+                    retryAfterPlayerError();
                 }
             }
 
@@ -461,6 +481,7 @@ public final class MainActivity extends AppCompatActivity {
         autoLaunchSetting = addSettingRow(() -> {
             boolean current = getSharedPreferences(PREFS, 0).getBoolean(AUTO_LAUNCH_KEY, false);
             getSharedPreferences(PREFS, 0).edit().putBoolean(AUTO_LAUNCH_KEY, !current).apply();
+            BootReceiver.updateEnabled(this, !current);
             refreshSettingLabels();
             Toast.makeText(this, !current
                             ? "Cihaz yeniden açıldığında Türkiye Canlı TV başlatılacak"
@@ -488,11 +509,15 @@ public final class MainActivity extends AppCompatActivity {
             showSettingsPanel(false);
             loadChannels();
         }).setText("Kanal listesini yenile");
+        addSettingRow(() -> {
+            showSettingsPanel(false);
+            appUpdateManager.checkForUpdates(true);
+        }).setText("Uygulama güncellemesini denetle");
         addSettingRow(() -> Toast.makeText(this,
                 "Kırmızı: yenile  ·  Yeşil: ara  ·  Sarı: kanallar  ·  Mavi: ayarlar",
                 Toast.LENGTH_LONG).show()).setText("Kumanda tuş rehberi");
         addSettingRow(() -> Toast.makeText(this,
-                "Türkiye Canlı TV 3.3.0 · Yerel Android TV oynatıcısı",
+                "Türkiye Canlı TV " + BuildConfig.VERSION_NAME + " · Yerel Android TV oynatıcısı",
                 Toast.LENGTH_LONG).show()).setText("Uygulama hakkında");
         refreshSettingLabels();
 
@@ -550,6 +575,7 @@ public final class MainActivity extends AppCompatActivity {
     }
 
     private void loadChannels() {
+        int sweepGeneration = ++healthSweepGeneration;
         showLoading("Kanallar hazırlanıyor…");
         new Thread(() -> {
             List<Channel> loaded = ChannelRepository.load(this);
@@ -565,6 +591,7 @@ public final class MainActivity extends AppCompatActivity {
                     return;
                 }
                 startAfterCatalogLoad();
+                uiHandler.postDelayed(() -> startChannelHealthSweep(sweepGeneration), 4_000L);
             });
         }, "channel-catalog").start();
     }
@@ -735,11 +762,6 @@ public final class MainActivity extends AppCompatActivity {
         waitingForManualStart = false;
         showLoading("Yayın yükleniyor…");
 
-        if (channel.isDirectStream()) {
-            playStream(channel.playbackUrl);
-            return;
-        }
-
         String cachedStream = resolvedStreams.get(channel.number);
         Set<String> excluded = failedStreams.get(channel.number);
         if (cachedStream != null && (excluded == null || !excluded.contains(cachedStream))) {
@@ -759,7 +781,7 @@ public final class MainActivity extends AppCompatActivity {
                     resolvedStreams.put(channel.number, resolvedUrl);
                     playStream(resolvedUrl);
                 } else {
-                    showPlaybackError("Bu kanal için yerel yayın bulunamadı");
+                    openWebFallback(channel, generation);
                 }
             });
         });
@@ -807,8 +829,105 @@ public final class MainActivity extends AppCompatActivity {
                 }
             }, 350L);
         } else {
-            showPlaybackError("Bu kanalın yayını şu anda açılamıyor");
+            openWebFallback(channel, tuneGeneration);
         }
+    }
+
+    private void openWebFallback(Channel channel, int generation) {
+        if (generation != tuneGeneration || channels.isEmpty()
+                || channels.get(currentIndex).number != channel.number) {
+            return;
+        }
+        tuneGeneration++;
+        automaticRetryCount = 0;
+        activeStreamUrl = null;
+        player.stop();
+        player.clearMediaItems();
+        showLoading(null);
+        setLiveState("WEB OYNATICI");
+        Toast.makeText(this, channel.name + " web oynatıcısıyla açılıyor",
+                Toast.LENGTH_SHORT).show();
+        webFallbackOpen = true;
+        startActivityForResult(WebPlayerActivity.createIntent(this, channel), WEB_PLAYER_REQUEST);
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != WEB_PLAYER_REQUEST) {
+            return;
+        }
+        webFallbackOpen = false;
+        int delta = resultCode == RESULT_OK ? WebPlayerActivity.channelDelta(data) : 0;
+        if (delta != 0 && !channels.isEmpty()) {
+            tune((currentIndex + delta + channels.size()) % channels.size());
+            return;
+        }
+        setLiveState("HAZIR");
+        showChannelPanel(true);
+    }
+
+    private void registerNetworkMonitoring() {
+        connectivityManager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+        if (connectivityManager == null) {
+            return;
+        }
+        networkUnavailable = !isNetworkConnected();
+        networkCallback = new ConnectivityManager.NetworkCallback() {
+            @Override
+            public void onAvailable(Network network) {
+                boolean shouldRetry = networkUnavailable;
+                networkUnavailable = false;
+                if (shouldRetry) {
+                    runOnUiThread(() -> {
+                        if (isFinishing() || isDestroyed() || webFallbackOpen) {
+                            return;
+                        }
+                        Toast.makeText(MainActivity.this,
+                                "Bağlantı geri geldi, yayın yenileniyor", Toast.LENGTH_SHORT).show();
+                        if (channels.isEmpty()) {
+                            loadChannels();
+                        } else {
+                            retryCurrentChannel();
+                        }
+                    });
+                }
+            }
+
+            @Override
+            public void onLost(Network network) {
+                if (!isNetworkConnected()) {
+                    networkUnavailable = true;
+                    runOnUiThread(() -> {
+                        if (!isFinishing() && !webFallbackOpen) {
+                            setLiveState("BAĞLANTI YOK");
+                        }
+                    });
+                }
+            }
+        };
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                connectivityManager.registerDefaultNetworkCallback(networkCallback);
+            } else {
+                NetworkRequest request = new NetworkRequest.Builder()
+                        .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                        .build();
+                connectivityManager.registerNetworkCallback(request, networkCallback);
+            }
+        } catch (RuntimeException ignored) {
+            networkCallback = null;
+        }
+    }
+
+    private boolean isNetworkConnected() {
+        if (connectivityManager == null) {
+            return false;
+        }
+        Network active = connectivityManager.getActiveNetwork();
+        NetworkCapabilities capabilities = connectivityManager.getNetworkCapabilities(active);
+        return capabilities != null
+                && capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
     }
 
     private void retryCurrentChannel() {
@@ -839,7 +958,7 @@ public final class MainActivity extends AppCompatActivity {
         };
         for (int index : indexes) {
             Channel channel = channels.get(index);
-            if (channel.isDirectStream() || resolvedStreams.containsKey(channel.number)
+            if (resolvedStreams.containsKey(channel.number)
                     || !resolvingChannels.add(channel.number)) {
                 continue;
             }
@@ -854,6 +973,32 @@ public final class MainActivity extends AppCompatActivity {
                     }
                 } finally {
                     resolvingChannels.remove(channel.number);
+                }
+            });
+        }
+    }
+
+    private void startChannelHealthSweep(int generation) {
+        if (generation != healthSweepGeneration || channels.isEmpty()) {
+            return;
+        }
+        List<Channel> snapshot = new ArrayList<>(channels);
+        for (Channel channel : snapshot) {
+            if (resolvedStreams.containsKey(channel.number)) {
+                continue;
+            }
+            healthExecutor.execute(() -> {
+                String resolvedUrl = ChannelRepository.resolvePlaybackUrl(channel);
+                if (generation != healthSweepGeneration) {
+                    return;
+                }
+                if (resolvedUrl != null && isPlayableStream(resolvedUrl)) {
+                    runOnUiThread(() -> {
+                        if (generation == healthSweepGeneration
+                                && findChannelIndexExact(channel.number) >= 0) {
+                            resolvedStreams.put(channel.number, resolvedUrl);
+                        }
+                    });
                 }
             });
         }
@@ -1124,19 +1269,24 @@ public final class MainActivity extends AppCompatActivity {
     }
 
     private int findChannelIndex(int number) {
+        int exact = findChannelIndexExact(number);
+        return exact >= 0 ? exact : 0;
+    }
+
+    private int findChannelIndexExact(int number) {
         for (int i = 0; i < channels.size(); i++) {
             if (channels.get(i).number == number) {
                 return i;
             }
         }
-        return 0;
+        return -1;
     }
 
     private TextView text(String value, int sizeSp) {
         TextView view = new TextView(this);
         view.setText(value);
         view.setTextColor(Color.WHITE);
-        view.setTextSize(sizeSp);
+        view.setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp * compactTextScale());
         view.setFontFeatureSettings("kern");
         view.setLineSpacing(0f, 1.08f);
         view.setPadding(dp(18), dp(12), dp(18), dp(12));
@@ -1144,7 +1294,19 @@ public final class MainActivity extends AppCompatActivity {
     }
 
     private int dp(int value) {
-        return Math.round(value * getResources().getDisplayMetrics().density);
+        return Math.round(value * getResources().getDisplayMetrics().density
+                * compactLayoutScale());
+    }
+
+    private float compactLayoutScale() {
+        int widthDp = getResources().getConfiguration().screenWidthDp;
+        int heightDp = getResources().getConfiguration().screenHeightDp;
+        float viewportScale = Math.min(1f, Math.min(widthDp / 960f, heightDp / 540f));
+        return COMPACT_LAYOUT_SCALE * Math.max(0.82f, viewportScale);
+    }
+
+    private float compactTextScale() {
+        return COMPACT_TEXT_SCALE * (compactLayoutScale() / COMPACT_LAYOUT_SCALE);
     }
 
     private FrameLayout.LayoutParams fullScreenParams() {
@@ -1284,6 +1446,9 @@ public final class MainActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         enterImmersiveMode();
+        if (appUpdateManager != null) {
+            appUpdateManager.onResume();
+        }
     }
 
     @Override
@@ -1297,6 +1462,7 @@ public final class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onDestroy() {
+        healthSweepGeneration++;
         uiHandler.removeCallbacksAndMessages(null);
         if (searchDialog != null) {
             searchDialog.dismiss();
@@ -1304,7 +1470,18 @@ public final class MainActivity extends AppCompatActivity {
         if (player != null) {
             player.release();
         }
+        if (appUpdateManager != null) {
+            appUpdateManager.destroy();
+        }
+        if (connectivityManager != null && networkCallback != null) {
+            try {
+                connectivityManager.unregisterNetworkCallback(networkCallback);
+            } catch (RuntimeException ignored) {
+                // Callback may already have been removed by the system.
+            }
+        }
         resolverExecutor.shutdownNow();
+        healthExecutor.shutdownNow();
         super.onDestroy();
     }
 }
