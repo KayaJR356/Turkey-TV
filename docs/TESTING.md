@@ -6,7 +6,7 @@ GitHub Actions her push ve pull request için şunları çalıştırır:
 
 - `:app:assembleDebug`
 - `:app:lint`
-- Derlenen debug APK'yı `TurkiyeTV-debug` iş akışı çıktısı olarak yükleme
+- Derlenen debug APK'yı `TurkiyeTV-debug` iş akışı artifact'i olarak yükleme
 
 ## Katalog araştırması — 20 Temmuz 2026
 
@@ -17,24 +17,40 @@ GitHub Actions her push ve pull request için şunları çalıştırır:
 - YouTube, dış iframe veya yayıncı sayfası kullanan kayıt: 73
 - Katalog sırası: TRT 1 ile başlayıp Türkmen Sport Tv ile bitiyor
 
-Kaynak yayınların çözünürlüğü yayıncı tarafından belirlenir. Kabul testinde uygulamanın seçtiği oynatma yolu ve TV odak davranışı ayrıca doğrulanmalıdır.
+Bu sayılar tarihsel doğrulama kaydıdır. Kaynak site ve yayıncılar değişebileceği için sürüm iddiası olarak kullanılmamalıdır.
+
+## Çözümleyici regresyon kontrolü
+
+Aşağıdaki kaynak biçimlerini temsil eden, yayın hakkı bakımcı tarafından doğrulanmış örnek kanallarla test edin:
+
+1. Doğrudan HLS (`.m3u8`)
+2. Doğrudan DASH (`.mpd`)
+3. JavaScript içinde `\/`, `\u002F` veya `\x2F` ile kaçırılmış HLS
+4. Percent-encoded medya URL'si
+5. `iframe src`, `data-src` veya `source src` içindeki medya
+6. Oynatıcı uç noktası başarısız olup kanal sayfasından bulunan medya
+7. YouTube/tarayıcı kaynağı — yerel URL uydurulmadan açık hata göstermeli
+8. Kapalı veya coğrafi engelli yayın — kontrollü hata ve yeniden deneme sunmalı
 
 ## Android TV kabul testi
 
-1. Uygulamayı TV başlatıcısındaki yeni Türkiye TV banner'ından açın.
-2. İlk açılış seçeneklerinin yalnızca bir kez gösterildiğini doğrulayın.
-3. Son izlenen, 1. kanal ve kanal listesi başlangıç seçeneklerini ayrı ayrı sınayın.
-4. İzleme ekranında dört yön tuşunun kanal değiştirmediğini doğrulayın.
-5. `Program + / -` ile kanal değiştirin.
-6. `2`, ardından kısa bekleme ile Show TV'ye; `285` ile Türkmen Sport Tv'ye gidin.
-7. OK ile listeyi açın, yön tuşlarıyla ekran dışındaki satırlara ilerleyin ve OK ile seçin.
-8. Kanal panelinin üstündeki sabit Ayarlar satırını yön tuşlarıyla seçin; Mavi tuşla da doğrudan açın.
-9. Yeşil tuşla kanal adına göre arama yapın, aramayı temizleyin ve doğru kanal numarasının korunduğunu doğrulayın.
-10. Kırmızı, Yeşil, Sarı ve Mavi tuş görevlerini ayrı ayrı sınayın.
-11. Doğrudan HLS, YouTube ve dış iframe kullanan örnekleri açın; uygulamanın hiçbirinde web sayfası/YouTube göstermediğini doğrulayın.
-12. Kanal değişiminde yayın hazır olana kadar siyah ekran ve `Yayın yükleniyor…` mesajını doğrulayın.
-13. Görüntü oranını Orijinal, Yakınlaştır ve Doldur arasında değiştirin.
-14. Panel, kanal bilgisi ve splash geçişlerinin akıcı; mevcut kanal ve saatin görünür olduğunu doğrulayın.
-15. Uygulamayı kapatıp açarak splash ekranını, son kanalı ve ayarların korunduğunu doğrulayın.
-16. İnterneti kapatıp daha önce kaydedilen eksiksiz katalogla açılışı doğrulayın.
-17. Temiz kurulumda internet yokken kısmi kanal listesi yerine görünür hata gösterildiğini doğrulayın.
+1. Uygulamayı TV başlatıcısındaki Türkiye TV banner'ından açın.
+2. Yeni splash ekranı ve üst durum şeridinin 720p/1080p/4K arayüz ölçeklerinde taşmadığını doğrulayın.
+3. İlk açılış seçeneklerinin yalnızca bir kez gösterildiğini doğrulayın.
+4. Son izlenen, 1. kanal ve kanal rehberi başlangıç seçeneklerini ayrı ayrı sınayın.
+5. İzleme ekranında dört yön tuşunun kanal değiştirmediğini doğrulayın.
+6. `Program + / -` ve numara tuşlarıyla kanal değiştirin.
+7. OK ile rehberi açın; odağın mevcut kanala geldiğini ve listenin doğru satıra kaydığını doğrulayın.
+8. Arama sonucundan kanal seçin, aramayı temizleyin ve gerçek kanal numarasının korunduğunu doğrulayın.
+9. Kırmızı, Yeşil, Sarı ve Mavi tuş görevlerini ayrı ayrı sınayın.
+10. Ayar panelindeki tüm seçenekleri değiştirip kalıcı olduklarını doğrulayın.
+11. Kanal değişiminde `Yükleniyor`, `Canlı` ve hata rozetlerinin doğru geçiş yaptığını doğrulayın.
+12. Görüntü oranını Orijinal, Yakınlaştır ve Doldur arasında değiştirin.
+13. Oynatma hatasında otomatik tek yeniden denemeyi ve Kırmızı tuşla elle yenilemeyi doğrulayın.
+14. Uygulamayı kapatıp açarak son kanal ve ayarların korunduğunu doğrulayın.
+15. İnterneti kapatıp daha önce kaydedilen eksiksiz katalogla açılışı doğrulayın.
+16. Temiz kurulumda internet yokken kısmi kanal listesi yerine görünür hata gösterildiğini doğrulayın.
+
+## Yayın doğrulama sınırı
+
+Kaynak yayınların çözünürlüğü, sürekliliği ve bölgesel erişimi yayıncı tarafından belirlenir. Başarılı build, tüm üçüncü taraf yayınların her an erişilebilir olduğu anlamına gelmez.
