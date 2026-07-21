@@ -2,6 +2,7 @@ package tv.kaya.turksat;
 
 import android.content.Context;
 import android.text.Html;
+import android.util.Base64;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -10,10 +11,12 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -29,6 +32,8 @@ final class ChannelRepository {
     private static final String PREFS = "tv_settings";
     private static final String CACHE_KEY = "channel_cache_v3";
     private static final int MINIMUM_COMPLETE_CATALOG_SIZE = 250;
+    private static final int MAX_RESOLVE_DEPTH = 5;
+    private static final int MAX_DOCUMENT_CHARS = 2_000_000;
     private static final String USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                     + "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -39,12 +44,22 @@ final class ChannelRepository {
             Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
     private static final Pattern ANCHOR = Pattern.compile(
             "<a\\s+([^>]+)>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
-    private static final Pattern ADAPTIVE_STREAM_URL = Pattern.compile(
-            "https?://[^\\s\\\"'<>\\\\]+?\\.(?:m3u8|mpd)(?:\\?[^\\s\\\"'<>\\\\]*)?",
+    private static final Pattern MEDIA_STREAM_URL = Pattern.compile(
+            "https?://[^\\s\\\"'<>\\\\]+?(?:\\.(?:m3u8|mpd|mp4)|/manifest)"
+                    + "(?:\\?[^\\s\\\"'<>\\\\]*)?",
             Pattern.CASE_INSENSITIVE);
-    private static final Pattern IFRAME_URL = Pattern.compile(
-            "<iframe[^>]+src=['\\\"]([^'\\\"]+)['\\\"]",
+    private static final Pattern EMBED_URL = Pattern.compile(
+            "<(?:iframe|video|source)[^>]+(?:src|data-src|data-lazy-src)\\s*=\\s*"
+                    + "['\\\"]([^'\\\"]+)['\\\"]",
             Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+    private static final Pattern ENCODED_URL = Pattern.compile(
+            "https?%3A%2F%2F[^\\s\\\"'<>]+", Pattern.CASE_INSENSITIVE);
+    private static final Pattern BASE64_PAYLOAD = Pattern.compile(
+            "(?:atob|Base64\\.decode)\\s*\\(\\s*['\\\"]([A-Za-z0-9+/=]{24,8192})['\\\"]",
+            Pattern.CASE_INSENSITIVE);
+    private static final Pattern QUOTED_URL = Pattern.compile(
+            "['\\\"](https?://[^'\\\"<>]+)['\\\"]",
+            Pattern.CASE_INSENSITIVE);
     private static final Map<String, String> PREFERRED_STREAMS = createPreferredStreams();
 
     private ChannelRepository() {
@@ -72,11 +87,20 @@ final class ChannelRepository {
         if (channel.isDirectStream()) {
             return channel.playbackUrl;
         }
-        try {
-            return resolveNativeStream(channel.playbackUrl, channel.pageUrl, 0, new HashSet<>());
-        } catch (Exception ignored) {
-            // Native playback is intentionally strict: never fall back to a web page.
+
+        Set<String> visited = new HashSet<>();
+        String[] sources = {channel.playbackUrl, channel.pageUrl};
+        for (String source : sources) {
+            try {
+                String resolved = resolveNativeStream(source, channel.pageUrl, 0, visited);
+                if (resolved != null) {
+                    return resolved;
+                }
+            } catch (Exception ignored) {
+                // Try the channel page after a player endpoint fails or changes shape.
+            }
         }
+        // Native playback is intentionally strict: never return a web page as media.
         return null;
     }
 
@@ -85,32 +109,64 @@ final class ChannelRepository {
             String referer,
             int depth,
             Set<String> visited) throws Exception {
-        if (source == null || depth > 3 || !source.startsWith("https://")
+        if (source == null || depth > MAX_RESOLVE_DEPTH || !source.startsWith("https://")
                 || isBrowserOnlySource(source) || !visited.add(source)) {
             return null;
         }
-        if (isAdaptiveStream(source)) {
+        if (isPlayableStream(source)) {
             return source;
         }
 
-        String normalizedHtml = downloadText(source, referer)
-                .replace("\\/", "/")
-                .replace("\\u0026", "&")
-                .replace("&amp;", "&");
-        Matcher streamMatcher = ADAPTIVE_STREAM_URL.matcher(normalizedHtml);
-        while (streamMatcher.find()) {
-            String streamUrl = streamMatcher.group().replaceAll("[),;]+$", "");
-            if (streamUrl.startsWith("https://") && !isBrowserOnlySource(streamUrl)) {
-                return streamUrl;
+        String normalizedHtml = normalizeDocument(downloadText(source, referer));
+        LinkedHashSet<String> candidates = new LinkedHashSet<>();
+
+        collectMediaUrls(normalizedHtml, candidates);
+
+        Matcher encodedMatcher = ENCODED_URL.matcher(normalizedHtml);
+        while (encodedMatcher.find()) {
+            try {
+                String decoded = URLDecoder.decode(encodedMatcher.group(), StandardCharsets.UTF_8.name());
+                collectCandidate(decoded, candidates);
+            } catch (Exception ignored) {
+                // Ignore malformed percent-encoded values and continue scanning.
             }
         }
 
-        Matcher iframeMatcher = IFRAME_URL.matcher(normalizedHtml);
-        while (iframeMatcher.find()) {
-            String iframeUrl = absoluteUrl(source, iframeMatcher.group(1));
-            String nestedStream = resolveNativeStream(iframeUrl, source, depth + 1, visited);
+        Matcher base64Matcher = BASE64_PAYLOAD.matcher(normalizedHtml);
+        while (base64Matcher.find()) {
+            try {
+                String decoded = new String(
+                        Base64.decode(base64Matcher.group(1), Base64.DEFAULT),
+                        StandardCharsets.UTF_8);
+                collectMediaUrls(normalizeDocument(decoded), candidates);
+            } catch (Exception ignored) {
+                // Player pages often contain unrelated base64 assets.
+            }
+        }
+
+        for (String candidate : candidates) {
+            if (isPlayableStream(candidate)) {
+                return candidate;
+            }
+        }
+
+        Matcher embedMatcher = EMBED_URL.matcher(normalizedHtml);
+        while (embedMatcher.find()) {
+            String embedUrl = absoluteUrl(source, sanitizeUrl(embedMatcher.group(1)));
+            String nestedStream = resolveNativeStream(embedUrl, source, depth + 1, visited);
             if (nestedStream != null) {
                 return nestedStream;
+            }
+        }
+
+        Matcher quotedMatcher = QUOTED_URL.matcher(normalizedHtml);
+        while (quotedMatcher.find()) {
+            String candidate = sanitizeUrl(quotedMatcher.group(1));
+            if (isLikelyPlayerPage(candidate)) {
+                String nestedStream = resolveNativeStream(candidate, source, depth + 1, visited);
+                if (nestedStream != null) {
+                    return nestedStream;
+                }
             }
         }
         return null;
@@ -127,9 +183,70 @@ final class ChannelRepository {
         }
     }
 
-    private static boolean isAdaptiveStream(String url) {
+    private static void collectMediaUrls(String source, Set<String> candidates) {
+        Matcher matcher = MEDIA_STREAM_URL.matcher(source);
+        while (matcher.find()) {
+            collectCandidate(matcher.group(), candidates);
+        }
+    }
+
+    private static void collectCandidate(String raw, Set<String> candidates) {
+        String candidate = sanitizeUrl(raw);
+        if (candidate.startsWith("https://") && !isBrowserOnlySource(candidate)
+                && !isTrackingSource(candidate)) {
+            candidates.add(candidate);
+        }
+    }
+
+    private static String sanitizeUrl(String value) {
+        return value == null ? "" : value
+                .replace("\\/", "/")
+                .replace("\\u0026", "&")
+                .replace("\\u002F", "/")
+                .replace("\\u003A", ":")
+                .replace("\\x26", "&")
+                .replace("\\x2F", "/")
+                .replace("\\x3A", ":")
+                .replace("&amp;", "&")
+                .replaceAll("[\\\\),;]+$", "")
+                .trim();
+    }
+
+    private static String normalizeDocument(String value) {
+        return sanitizeUrl(value)
+                .replace("\\u002f", "/")
+                .replace("\\u003a", ":")
+                .replace("\\x2f", "/")
+                .replace("\\x3a", ":");
+    }
+
+    private static boolean isPlayableStream(String url) {
         String value = url.toLowerCase(Locale.ROOT);
-        return value.contains(".m3u8") || value.contains(".mpd");
+        return value.contains(".m3u8")
+                || value.contains(".mpd")
+                || value.contains(".mp4")
+                || value.contains("format=m3u8")
+                || value.contains("format=mpd");
+    }
+
+    private static boolean isLikelyPlayerPage(String url) {
+        String value = url.toLowerCase(Locale.ROOT);
+        return value.startsWith("https://")
+                && !isBrowserOnlySource(value)
+                && !isTrackingSource(value)
+                && (value.contains("/player")
+                || value.contains("/embed")
+                || value.contains("stream")
+                || value.contains("live"));
+    }
+
+    private static boolean isTrackingSource(String url) {
+        String value = url.toLowerCase(Locale.ROOT);
+        return value.contains("doubleclick")
+                || value.contains("googlesyndication")
+                || value.contains("google-analytics")
+                || value.contains("facebook.com/tr")
+                || value.contains("/ads/");
     }
 
     private static boolean isBrowserOnlySource(String url) {
@@ -198,6 +315,9 @@ final class ChannelRepository {
                 StringBuilder content = new StringBuilder();
                 String line;
                 while ((line = reader.readLine()) != null) {
+                    if (content.length() + line.length() > MAX_DOCUMENT_CHARS) {
+                        throw new IllegalStateException("Player document is too large");
+                    }
                     content.append(line).append('\n');
                 }
                 return content.toString();
@@ -286,11 +406,15 @@ final class ChannelRepository {
         streams.put(normalize("TRT 2"), "https://tv-trt2.medya.trt.com.tr/master.m3u8");
         streams.put(normalize("TRT Haber"), "https://tv-trthaber.medya.trt.com.tr/master.m3u8");
         streams.put(normalize("TRT Spor"), "https://tv-trtspor1.medya.trt.com.tr/master.m3u8");
+        streams.put(normalize("TRT Spor Yıldız"), "https://tv-trtspor2.medya.trt.com.tr/master.m3u8");
         streams.put(normalize("TRT Belgesel"), "https://tv-trtbelgesel.medya.trt.com.tr/master.m3u8");
         streams.put(normalize("TRT Çocuk"), "https://tv-trtcocuk.medya.trt.com.tr/master.m3u8");
         streams.put(normalize("TRT Müzik"), "https://tv-trtmuzik.medya.trt.com.tr/master.m3u8");
         streams.put(normalize("TRT Türk"), "https://tv-trtturk.medya.trt.com.tr/master.m3u8");
         streams.put(normalize("TRT Avaz"), "https://tv-trtavaz.medya.trt.com.tr/master.m3u8");
+        streams.put(normalize("TRT World"), "https://tv-trtworld.medya.trt.com.tr/master.m3u8");
+        streams.put(normalize("TRT Kürdi"), "https://tv-trtkurdi.medya.trt.com.tr/master.m3u8");
+        streams.put(normalize("TRT Arapça"), "https://tv-trtarabi.medya.trt.com.tr/master.m3u8");
         streams.put(normalize("CNBC-e"), "https://hnpsechtsc.turknet.ercdn.net/xpnvudnlsv/cnbc-e/cnbc-e.m3u8");
         streams.put(normalize("Yol Tv"), "https://live.yoltv.com/hls/stream.m3u8");
         return streams;
