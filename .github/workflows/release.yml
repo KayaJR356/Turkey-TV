@@ -44,6 +44,27 @@ jobs:
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Normalize legacy debug releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq '.[] | [.id, .tag_name, (.name // .tag_name), .prerelease] | @tsv' | \
+          while IFS=$'\t' read -r RELEASE_ID TAG TITLE IS_PRERELEASE; do
+            case "$TAG" in
+              v3.0.0|v3.1.0|v3.2.0|v3.3.0)
+                if [[ "${TITLE,,}" != *debug* ]]; then
+                  TITLE="$TITLE (Debug)"
+                fi
+                if [[ "$IS_PRERELEASE" != "true" || "${TITLE,,}" == *debug* ]]; then
+                  gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" \
+                    -f name="$TITLE" \
+                    -F prerelease=true >/dev/null
+                fi
+                ;;
+            esac
+          done
+
       - name: Set up Java 17
         if: steps.version.outputs.exists == 'false'
         uses: actions/setup-java@v5
