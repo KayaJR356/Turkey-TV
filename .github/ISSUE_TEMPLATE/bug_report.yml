@@ -1,0 +1,50 @@
+name: Hata bildirimi
+description: Tekrar üretilebilir bir sorunu bildirin.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Bildirim için teşekkürler. Güvenlik açıklarını burada paylaşmayın; SECURITY.md politikasını kullanın.
+  - type: checkboxes
+    attributes:
+      label: Ön kontrol
+      options:
+        - label: Mevcut issue'larda aynı sorunu aradım.
+          required: true
+        - label: Güncel sürüm veya `main` dalındaki derlemeyle doğruladım.
+          required: true
+  - type: input
+    attributes:
+      label: Cihaz ve işletim sistemi
+      description: TV modeli ve Android / Google TV sürümü.
+      placeholder: Örn. Chromecast with Google TV, Android TV 12
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: Uygulama sürümü
+      description: Sürüm numarası veya commit SHA.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Sorunun özeti
+      description: Ne oldu ve ne olmasını bekliyordunuz?
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Tekrar üretme adımları
+      placeholder: |
+        1. Uygulamayı aç
+        2. ... kanalını seç
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Ek bağlam
+      description: Gizli bilgi içermeyen log, ekran görüntüsü veya ek ayrıntı.

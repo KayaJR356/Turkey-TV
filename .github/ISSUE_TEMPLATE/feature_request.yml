@@ -1,0 +1,32 @@
+name: Özellik önerisi
+description: Kullanıcı problemine dayanan geliştirme önerisi sunun.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: checkboxes
+    attributes:
+      label: Ön kontrol
+      options:
+        - label: Mevcut issue ve roadmap maddelerinde benzer öneriyi aradım.
+          required: true
+  - type: textarea
+    attributes:
+      label: Problem
+      description: Çözmek istediğiniz kullanıcı problemini açıklayın.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Önerilen çözüm
+      description: Beklenen davranışı ve TV kumandası deneyimini açıklayın.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Alternatifler
+      description: Değerlendirdiğiniz diğer yaklaşımlar.
+  - type: textarea
+    attributes:
+      label: Ek bağlam
+      description: Mockup, örnek veya ilgili bağlantılar.
