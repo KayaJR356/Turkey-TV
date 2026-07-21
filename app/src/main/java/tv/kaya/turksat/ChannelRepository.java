@@ -14,6 +14,7 @@ import java.net.URL;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -21,6 +22,12 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletionService;
+import java.util.concurrent.ExecutorCompletionService;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -32,8 +39,9 @@ final class ChannelRepository {
     private static final String PREFS = "tv_settings";
     private static final String CACHE_KEY = "channel_cache_v3";
     private static final int MINIMUM_COMPLETE_CATALOG_SIZE = 250;
-    private static final int MAX_RESOLVE_DEPTH = 5;
-    private static final int MAX_DOCUMENT_CHARS = 2_000_000;
+    private static final int MAX_RESOLVE_DEPTH = 3;
+    private static final int MAX_DOCUMENT_CHARS = 1_250_000;
+    private static final long MAX_RESOLVE_TIME_MS = 11_000L;
     private static final String USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                     + "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -84,21 +92,58 @@ final class ChannelRepository {
     }
 
     static String resolvePlaybackUrl(Channel channel) {
-        if (channel.isDirectStream()) {
+        return resolvePlaybackUrl(channel, Collections.emptySet());
+    }
+
+    static String resolvePlaybackUrl(Channel channel, Set<String> excludedStreams) {
+        Set<String> excluded = sanitizeExcludedStreams(excludedStreams);
+        if (channel.isDirectStream() && !excluded.contains(sanitizeUrl(channel.playbackUrl))) {
             return channel.playbackUrl;
         }
 
-        Set<String> visited = new HashSet<>();
-        String[] sources = {channel.playbackUrl, channel.pageUrl};
-        for (String source : sources) {
-            try {
-                String resolved = resolveNativeStream(source, channel.pageUrl, 0, visited);
+        LinkedHashSet<String> sources = new LinkedHashSet<>();
+        if (!channel.isDirectStream()) {
+            sources.add(channel.playbackUrl);
+        }
+        sources.add(channel.pageUrl);
+
+        ExecutorService executor = Executors.newFixedThreadPool(sources.size());
+        CompletionService<String> completion = new ExecutorCompletionService<>(executor);
+        ArrayList<Future<String>> futures = new ArrayList<>();
+        try {
+            for (String source : sources) {
+                futures.add(completion.submit(() -> {
+                    try {
+                        return resolveNativeStream(source, channel.pageUrl, 0,
+                                new HashSet<>(), excluded);
+                    } catch (Exception ignored) {
+                        return null;
+                    }
+                }));
+            }
+
+            long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(MAX_RESOLVE_TIME_MS);
+            for (int i = 0; i < sources.size(); i++) {
+                long remaining = deadline - System.nanoTime();
+                if (remaining <= 0) {
+                    break;
+                }
+                Future<String> completed = completion.poll(remaining, TimeUnit.NANOSECONDS);
+                if (completed == null) {
+                    break;
+                }
+                String resolved = completed.get();
                 if (resolved != null) {
                     return resolved;
                 }
-            } catch (Exception ignored) {
-                // Try the channel page after a player endpoint fails or changes shape.
             }
+        } catch (Exception ignored) {
+            // A failed source must not prevent the alternate player/page source from being tried.
+        } finally {
+            for (Future<String> future : futures) {
+                future.cancel(true);
+            }
+            executor.shutdownNow();
         }
         // Native playback is intentionally strict: never return a web page as media.
         return null;
@@ -108,13 +153,15 @@ final class ChannelRepository {
             String source,
             String referer,
             int depth,
-            Set<String> visited) throws Exception {
+            Set<String> visited,
+            Set<String> excluded) throws Exception {
         if (source == null || depth > MAX_RESOLVE_DEPTH || !source.startsWith("https://")
                 || isBrowserOnlySource(source) || !visited.add(source)) {
             return null;
         }
         if (isPlayableStream(source)) {
-            return source;
+            String stream = sanitizeUrl(source);
+            return excluded.contains(stream) ? null : stream;
         }
 
         String normalizedHtml = normalizeDocument(downloadText(source, referer));
@@ -145,7 +192,7 @@ final class ChannelRepository {
         }
 
         for (String candidate : candidates) {
-            if (isPlayableStream(candidate)) {
+            if (isPlayableStream(candidate) && !excluded.contains(sanitizeUrl(candidate))) {
                 return candidate;
             }
         }
@@ -153,7 +200,8 @@ final class ChannelRepository {
         Matcher embedMatcher = EMBED_URL.matcher(normalizedHtml);
         while (embedMatcher.find()) {
             String embedUrl = absoluteUrl(source, sanitizeUrl(embedMatcher.group(1)));
-            String nestedStream = resolveNativeStream(embedUrl, source, depth + 1, visited);
+            String nestedStream = resolveNativeStream(
+                    embedUrl, source, depth + 1, visited, excluded);
             if (nestedStream != null) {
                 return nestedStream;
             }
@@ -163,7 +211,8 @@ final class ChannelRepository {
         while (quotedMatcher.find()) {
             String candidate = sanitizeUrl(quotedMatcher.group(1));
             if (isLikelyPlayerPage(candidate)) {
-                String nestedStream = resolveNativeStream(candidate, source, depth + 1, visited);
+                String nestedStream = resolveNativeStream(
+                        candidate, source, depth + 1, visited, excluded);
                 if (nestedStream != null) {
                     return nestedStream;
                 }
@@ -210,6 +259,20 @@ final class ChannelRepository {
                 .replace("&amp;", "&")
                 .replaceAll("[\\\\),;]+$", "")
                 .trim();
+    }
+
+    private static Set<String> sanitizeExcludedStreams(Set<String> excludedStreams) {
+        if (excludedStreams == null || excludedStreams.isEmpty()) {
+            return Collections.emptySet();
+        }
+        HashSet<String> sanitized = new HashSet<>();
+        for (String value : excludedStreams) {
+            String stream = sanitizeUrl(value);
+            if (!stream.isEmpty()) {
+                sanitized.add(stream);
+            }
+        }
+        return sanitized;
     }
 
     private static String normalizeDocument(String value) {
@@ -298,8 +361,8 @@ final class ChannelRepository {
 
     private static String downloadText(String source, String referer) throws Exception {
         HttpURLConnection connection = (HttpURLConnection) new URL(source).openConnection();
-        connection.setConnectTimeout(7000);
-        connection.setReadTimeout(12000);
+        connection.setConnectTimeout(4500);
+        connection.setReadTimeout(7000);
         connection.setRequestProperty("User-Agent", USER_AGENT);
         connection.setRequestProperty("Accept-Language", "tr-TR,tr;q=0.9");
         if (referer != null && referer.startsWith("https://")) {
