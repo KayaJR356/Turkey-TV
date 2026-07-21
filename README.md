@@ -1,35 +1,141 @@
 # Türkiye TV
 
-Android TV ve Google TV için kumanda odaklı, tam ekran canlı kanal oynatıcısı.
+<div align="center">
 
-## Özellikler
+**Android TV ve Google TV için kumanda odaklı, tam ekran canlı yayın oynatıcısı.**
 
-- `canlitv.diy/tr` kataloğundaki kanal adlarını ve sırasını her açılışta yeniler
-- 20 Temmuz 2026 kataloğundaki 285 kanalın tamamını aynı sırayla gösterir
-- Kanal oynatıcısındaki HLS/DASH adresini bulup Media3 ile uyarlanabilir kalitede oynatır
-- TRT kanallarında doğrulanmış resmî HLS yayınlarını kullanır
-- Web sitesi veya YouTube açmaz; yalnızca yerel Media3 TV oynatıcısını kullanır
-- İç içe oynatıcı sayfalarını üç seviyeye kadar izleyerek doğrudan HLS/DASH yayını arar
-- Son eksiksiz kanal listesini cihazda saklar; eksik listeyi hiçbir zaman tam listenin üzerine yazmaz
-- Büyük yazı, belirgin odak halkası ve 10-foot TV mesafesine uygun kanal paneli sunar
-- Açılış splash ekranı, kanal adına göre arama ve siyah yayın yükleme ekranı sunar
-- Hatalı yayınları otomatik bir kez yeniden dener; Kırmızı tuşla elle yenileme sağlar
-- Animasyonlu menüler, mevcut kanal vurgusu, saat ve yükleme göstergesi içerir
-- Orijinal, yakınlaştır ve ekranı doldur görüntü oranı seçeneklerini destekler
-- İlk açılışta başlangıç davranışını sorar
-- Son izlenen kanal, her zaman 1. kanal veya açılışta kanal seçimi seçeneklerini destekler
-- Açılışta otomatik oynatma, kanal bilgi süresi ve görüntü oranı ayarları içerir
-- Son izlenen kanalı cihazda saklar
-- GitHub Actions ile her değişiklikte debug APK derler ve Android Lint çalıştırır
+[![Android TV build](https://github.com/KayaJR356/Turkey-TV/actions/workflows/android.yml/badge.svg)](https://github.com/KayaJR356/Turkey-TV/actions/workflows/android.yml)
+[![License: MIT](https://img.shields.io/github/license/KayaJR356/Turkey-TV?style=flat-square)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/KayaJR356/Turkey-TV?display_name=tag&include_prereleases&style=flat-square)](https://github.com/KayaJR356/Turkey-TV/releases)
+[![Stars](https://img.shields.io/github/stars/KayaJR356/Turkey-TV?style=flat-square)](https://github.com/KayaJR356/Turkey-TV/stargazers)
+[![Forks](https://img.shields.io/github/forks/KayaJR356/Turkey-TV?style=flat-square)](https://github.com/KayaJR356/Turkey-TV/forks)
+[![Issues](https://img.shields.io/github/issues/KayaJR356/Turkey-TV?style=flat-square)](https://github.com/KayaJR356/Turkey-TV/issues)
+[![Last commit](https://img.shields.io/github/last-commit/KayaJR356/Turkey-TV?style=flat-square)](https://github.com/KayaJR356/Turkey-TV/commits/main)
+[![Top language](https://img.shields.io/github/languages/top/KayaJR356/Turkey-TV?style=flat-square)](https://github.com/KayaJR356/Turkey-TV)
 
-## Kumanda
+</div>
+
+> [!NOTE]
+> 🖼️ **Banner alanı:** `docs/assets/banner.png` eklendiğinde bu notu proje banner'ı ile değiştirin. Önerilen oran: **3:1**.
+
+Türkiye TV; canlı kanal kataloğunu yenileyen, uygun HLS/DASH akışlarını Media3 ile oynatan ve TV kumandası için tasarlanmış açık kaynak bir Android uygulamasıdır. Büyük ekran odak davranışı, kanal arama, hızlı kanal seçimi ve çevrimdışı katalog önbelleğiyle koltuktan kullanıma odaklanır.
+
+> [!IMPORTANT]
+> Bu proje yayın içeriği barındırmaz veya yayın hakları sağlamaz. Kanal erişilebilirliği, görüntü kalitesi ve coğrafi kısıtlamalar ilgili yayıncıya bağlıdır.
+
+## İçindekiler
+
+- [Neden Türkiye TV?](#why)
+- [Özellikler](#features)
+- [Ekran görüntüleri](#screenshots)
+- [Demo](#demo)
+- [Kurulum](#installation)
+- [Kullanım](#usage)
+- [Proje yapısı](#structure)
+- [Teknoloji yığını](#stack)
+- [Yol haritası](#roadmap)
+- [Katkı sağlama](#contributing)
+- [Lisans](#license)
+- [İletişim ve destek](#contact)
+- [Teşekkürler](#acknowledgements)
+
+<a id="why"></a>
+## Neden Türkiye TV?
+
+| İhtiyaç | Türkiye TV'nin yaklaşımı |
+| --- | --- |
+| TV'de kolay gezinme | D-pad, numara, renkli işlev ve medya tuşlarına uygun arayüz |
+| Yerel oynatma | HLS/DASH akışlarını Media3/ExoPlayer ile tam ekranda oynatma |
+| Güncel kanal listesi | Uygulama açılışında katalog yenileme ve eksik sonuçları reddetme |
+| Kesintilere dayanıklılık | Son eksiksiz kataloğu cihazda saklama ve yayın hatasını yeniden deneme |
+| Büyük ekran okunabilirliği | 10-foot arayüz, yüksek kontrastlı odak ve belirgin kanal paneli |
+
+<a id="features"></a>
+## ✨ Özellikler
+
+- Android TV ve Google TV Leanback başlatıcı desteği
+- Katalogdaki **285 kanalı** doğrulanmış sırayla gösterme
+- HLS ve DASH akışlarını Media3 ile uyarlanabilir kalitede oynatma
+- TRT kanalları için doğrulanmış resmî HLS akışlarını tercih etme
+- İç içe oynatıcı sayfalarında üç seviyeye kadar doğrudan akış çözümleme
+- Kanal adına göre arama ve numarayla doğrudan kanal seçimi
+- Son izlenen kanal, başlangıç davranışı, otomatik oynatma ve bilgi süresi ayarları
+- Orijinal, yakınlaştır ve ekranı doldur görüntü oranı seçenekleri
+- Son eksiksiz kanal kataloğunu cihazda güvenli biçimde önbelleğe alma
+- Otomatik tek yeniden deneme ve Kırmızı tuşla elle yayın yenileme
+- Splash ekranı, yükleme durumu, saat ve mevcut kanal göstergesi
+- Her push ve pull request'te debug APK derleme ve Android Lint kontrolü
+
+> [!NOTE]
+> Kanal sayısı 20 Temmuz 2026 tarihli katalog doğrulamasına dayanır. Kaynak katalog değiştikçe sayı ve erişilebilirlik değişebilir.
+
+<a id="screenshots"></a>
+## 📺 Ekran görüntüleri
+
+| Oynatıcı | Kanal listesi | Ayarlar |
+| :---: | :---: | :---: |
+| `TODO: docs/assets/player.png` | `TODO: docs/assets/channel-list.png` | `TODO: docs/assets/settings.png` |
+
+> [!TIP]
+> Ekran görüntülerini 16:9 oranında, kişisel bilgi ve üçüncü taraf telifli yayın karesi göstermeden ekleyin.
+
+<a id="demo"></a>
+## 🎬 Demo
+
+- **Video/GIF:** `TODO: Demo bağlantısı veya docs/assets/demo.gif`
+- **Sürüm sayfası:** [GitHub Releases](https://github.com/KayaJR356/Turkey-TV/releases) — `TODO: İlk sürümü yayınla`
+- **CI çıktısı:** Başarılı GitHub Actions çalışmasındaki `TurkiyeTV-debug` artifact'i
+
+<a id="installation"></a>
+## Kurulum
+
+### Kaynaktan derleme
+
+#### Gereksinimler
+
+- JDK 17
+- Android SDK 35
+- Gradle 8.9
+- Git
+
+```bash
+git clone https://github.com/KayaJR356/Turkey-TV.git
+cd Turkey-TV
+gradle :app:assembleDebug
+```
+
+Derlenen APK:
+
+```text
+app/build/outputs/apk/debug/app-debug.apk
+```
+
+ADB ile bağlı TV cihazına yüklemek için:
+
+```bash
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+> [!WARNING]
+> Repository içinde sürümsüz APK tutulmaz. Dağıtım için imzalı GitHub Release ve doğrulanabilir checksum yayımlama süreci tamamlanmalıdır.
+
+Derleme ve lint kontrollerini birlikte çalıştırmak için:
+
+```bash
+gradle :app:assembleDebug :app:lint
+```
+
+<a id="usage"></a>
+## 🎮 Kullanım
+
+İlk açılışta başlangıç davranışını seçin. Ardından kumandanızla kanal değiştirebilir, kanal listesinde gezinebilir ve oynatma ayarlarını yönetebilirsiniz.
 
 | Tuş | İşlev |
-|---|---|
+| --- | --- |
 | `Program + / -` | Sonraki / önceki kanal |
 | `0–9` | Kanal numarasına doğrudan git |
 | `OK`, Menü veya Rehber | Kanal listesini aç |
-| Yön tuşları | Yalnızca kanal ve ayar menülerinde gezin |
+| Yön tuşları | Kanal ve ayar menülerinde gezin |
 | Sağ veya Geri | Açık menüyü kapat |
 | Kırmızı | Geçerli yayını yeniden başlat |
 | Yeşil veya Arama | Kanal adına göre ara |
@@ -38,26 +144,100 @@ Android TV ve Google TV için kumanda odaklı, tam ekran canlı kanal oynatıcı
 | Bilgi | Kanal bilgisini göster |
 | Oynat / Duraklat | Yayını oynat veya duraklat |
 
-## Yayın kalitesi
+Yayın çözümleme ve hata toleransı ayrıntıları için [mimari belgesine](docs/ARCHITECTURE.md), kabul adımları için [test belgesine](docs/TESTING.md) bakın.
 
-Uygulama, kaynakta bulunan en iyi uyarlanabilir akışı Media3'e verir. 20 Temmuz 2026 taramasında site oynatıcılarının 212 tanesi doğrudan HLS yayın sağladı; TRT ve bazı ek doğrulanmış kanallar tercih edilen doğrudan yayınlarla açılır. Web sayfası ve YouTube geri dönüşü bilinçli olarak kapalıdır. Yerel HLS/DASH adresi bulunamayan kanalda siyah ekran üzerinde açık bir hata gösterilir.
+<a id="structure"></a>
+## 🗂️ Proje yapısı
 
-Bir yayıncının yalnızca SD yayın vermesi, coğrafi engel koyması veya yayını kapatması durumunda uygulama görüntüyü yapay olarak HD'ye çeviremez. Liste ve sıra korunur; yayın kalitesi ve erişilebilirlik yayın sahibine bağlıdır.
-
-## Derleme
-
-Gereksinimler: JDK 17, Android SDK 35 ve Gradle 8.9.
-
-```shell
-gradle :app:assembleDebug
+```text
+Turkey-TV/
+├── .github/
+│   ├── ISSUE_TEMPLATE/          # Yapılandırılmış issue formları
+│   ├── workflows/android.yml    # Build, lint ve APK artifact iş akışı
+│   └── PULL_REQUEST_TEMPLATE.md
+├── app/
+│   ├── build.gradle             # Android uygulama yapılandırması
+│   └── src/main/
+│       ├── AndroidManifest.xml
+│       ├── java/tv/kaya/turksat/
+│       │   ├── Channel.java
+│       │   ├── ChannelRepository.java
+│       │   ├── MainActivity.java
+│       │   └── SplashActivity.java
+│       └── res/                 # TV arayüzü kaynakları
+├── docs/
+│   ├── ARCHITECTURE.md
+│   └── TESTING.md
+├── build.gradle
+└── settings.gradle
 ```
 
-GitHub Actions başarılı olduğunda kurulabilir debug APK, `TurkiyeTV-debug` adıyla iş akışı çıktısına eklenir.
+<a id="stack"></a>
+## 🧰 Teknoloji yığını
 
-## Gizlilik
+| Katman | Teknoloji |
+| --- | --- |
+| Dil | Java |
+| Platform | Android TV / Google TV |
+| Android SDK | Compile/Target 35, Minimum 23 |
+| Oynatıcı | AndroidX Media3 1.5.1 (ExoPlayer, HLS, DASH, UI) |
+| Arayüz | Android Views, AppCompat 1.7.0, Leanback launcher |
+| Build | Gradle 8.9, Android Gradle Plugin 8.7.3, JDK 17 |
+| CI | GitHub Actions |
 
-Uygulama hesap, konum, kişi, kamera veya mikrofon izni istemez. Yalnızca kanal kataloğu ve yayınları için internet erişimi kullanır. Ayarlar, son kanal ve son eksiksiz katalog cihazda saklanır.
+<a id="roadmap"></a>
+## 🛣️ Yol haritası
 
-## Lisans ve yayın hakları
+- [x] Kumanda odaklı tam ekran TV arayüzü
+- [x] HLS/DASH çözümleme ve Media3 oynatma
+- [x] Kanal arama, ayarlar ve katalog önbelleği
+- [x] CI üzerinde debug build ve Android Lint
+- [ ] `TODO:` Proje banner'ı ve gerçek ekran görüntüleri
+- [ ] `TODO:` İmzalı, sürümlenmiş GitHub Release ve checksum
+- [ ] `TODO:` Birim/entegrasyon test kapsamı hedefi
+- [ ] `TODO:` Bakımcı tarafından onaylanmış gelecek özellikler
 
-Kaynak kod MIT lisanslıdır. Uygulama yayın içeriğinin sahibi veya dağıtıcısı değildir. Kanal adları, yayınlar ve üçüncü taraf oynatıcılar kendi sahiplerine aittir.
+Planlanan çalışma için [issue'lara](https://github.com/KayaJR356/Turkey-TV/issues) bakın. Yeni bir yön önermeden önce [feature request](https://github.com/KayaJR356/Turkey-TV/issues/new?template=feature_request.yml) açın.
+
+<a id="contributing"></a>
+## 🤝 Katkı sağlama
+
+Katkılar değerlidir. Başlamadan önce [CONTRIBUTING.md](CONTRIBUTING.md) ve [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) belgelerini okuyun.
+
+1. Uygun issue formuyla değişikliği tartışın.
+2. Repository'yi fork'layın ve odaklı bir branch oluşturun.
+3. Değişikliğinizi build ve lint ile doğrulayın.
+4. Küçük, açıklayıcı commit'ler oluşturun.
+5. Pull request şablonunu eksiksiz doldurun.
+
+Güvenlik açığı bildirimleri için issue açmayın; [SECURITY.md](SECURITY.md) politikasını izleyin.
+
+<a id="license"></a>
+## 📄 Lisans
+
+Kaynak kod [MIT Lisansı](LICENSE) ile sunulur.
+
+Kanal adları, logoları, yayınları ve üçüncü taraf hizmetleri kendi sahiplerinin mülkiyetindedir. MIT Lisansı üçüncü taraf içerikleri için kullanım veya dağıtım hakkı vermez.
+
+<a id="contact"></a>
+## 💬 İletişim ve destek
+
+- Hata bildirimi: [Bug report](https://github.com/KayaJR356/Turkey-TV/issues/new?template=bug_report.yml)
+- Özellik önerisi: [Feature request](https://github.com/KayaJR356/Turkey-TV/issues/new?template=feature_request.yml)
+- Kullanım desteği: [SUPPORT.md](SUPPORT.md)
+- Güvenlik bildirimi: [SECURITY.md](SECURITY.md)
+- Bakımcı: [@KayaJR356](https://github.com/KayaJR356)
+
+<a id="acknowledgements"></a>
+## 🙏 Teşekkürler
+
+- [AndroidX Media3](https://developer.android.com/media/media3) ekibine
+- Android TV ve açık kaynak Android ekosistemine
+- Katalog bilgisini sağlayan kaynaklara ve yayınlarını erişilebilir kılan yayıncılara
+- Hata bildiren, belge geliştiren ve kod katkısı sağlayan tüm katılımcılara
+
+---
+
+<div align="center">
+Türkiye TV'yi yararlı bulduysanız repository'yi ⭐ ile destekleyebilirsiniz.
+</div>
