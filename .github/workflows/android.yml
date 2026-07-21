@@ -1,4 +1,4 @@
-name: Android TV build
+name: Türkiye Canlı TV build
 
 on:
   push:
@@ -32,6 +32,6 @@ jobs:
       - name: Upload debug APK
         uses: actions/upload-artifact@v7
         with:
-          name: TurkiyeTV-debug
+          name: TurkiyeCanliTV-debug
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
