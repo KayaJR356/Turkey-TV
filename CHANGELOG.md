@@ -12,6 +12,31 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr-TR/1.1.0/) yaklaşımın
 - Yapılandırılmış bug report ve feature request formları
 - Pull request şablonu
 
+## [3.4.0] - 2026-07-21
+
+### Added
+
+- GitHub Release sürümlerini otomatik denetleyen uygulama içi güncelleme sistemi
+- APK boyutu ve SHA-256 özeti doğrulandıktan sonra Android paket yükleyicisini açma
+- Android TV Ayarlar panelinden elle güncelleme denetimi
+- Bütün katalog için arka planda yayın sağlık taraması
+- Kalıcı repository secret anahtarıyla imzalı Release APK üretme iş akışı
+
+### Changed
+
+- HLS, DASH ve MP4 kaynakları oynatılmadan önce gerçek ağ yanıtıyla doğrulanıyor
+- Çalışmayan kanal listeden çıkarılıp otomatik olarak sonraki doğrulanabilir kanala geçiliyor
+- Başarısız kanallar altı saat gizleniyor; elle katalog yenileme yeniden sınamayı zorluyor
+
+### Security
+
+- Güncelleme indirmeleri yalnızca HTTPS GitHub adresleriyle ve 250 MB sınırıyla kısıtlandı
+- APK, `FileProvider` içerik URI'siyle ve geçici okuma izniyle paket yükleyicisine aktarılıyor
+
+> [!IMPORTANT]
+> Önceki debug anahtarıyla kurulmuş APK'lar, yeni kalıcı anahtarla imzalanmış `v3.4.0` sürümüne
+> yerinde yükseltilemez. Kullanıcı eski paketi bir kez kaldırıp imzalı sürümü yeniden kurmalıdır.
+
 ## [3.3.0] - 2026-07-21
 
 ### Added
@@ -89,6 +114,7 @@ Bu kayıt `app/build.gradle` içindeki `versionName` ve repository commit geçmi
 
 Yeni bir release yayımlanırken tarih, karşılaştırma bağlantıları ve migration notları bu dosyaya eklenmelidir.
 
-[Unreleased]: https://github.com/KayaJR356/Turkey-TV/compare/v3.3.0...HEAD
+[Unreleased]: https://github.com/KayaJR356/Turkey-TV/compare/v3.4.0...HEAD
+[3.4.0]: https://github.com/KayaJR356/Turkey-TV/releases/tag/v3.4.0
 [3.3.0]: https://github.com/KayaJR356/Turkey-TV/releases/tag/v3.3.0
 [3.2.0]: https://github.com/KayaJR356/Turkey-TV/releases/tag/v3.2.0

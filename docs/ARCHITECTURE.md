@@ -21,6 +21,12 @@
 9. Kanal değişiminde eski çözümleme sonucu kuşak numarasıyla iptal edilir; geç tamamlanan ağ yanıtı yeni kanalın üzerine yazamaz.
 10. Başarısız medya URL'si oturum boyunca dışlanır; aynı kanal için bulunan sonraki alternatif otomatik denenir.
 11. Mevcut kanal hazır olduğunda önceki ve sonraki kanal arka planda ön çözümlenir.
+12. Çözülen HLS/DASH/MP4 adresi oynatıcıya verilmeden önce gerçek bir HTTPS medya veya manifest
+    yanıtıyla sınanır.
+13. Katalog dört iş parçacıklı düşük öncelikli sağlık taramasından geçirilir. Çözülemeyen kanallar
+    oturum listesinden çıkarılır ve altı saat yeniden gösterilmez.
+14. Seçili kanalın bütün alternatifleri başarısız olursa uygulama hata ekranında kalmak yerine
+    kanalı gizler ve sıradaki doğrulanabilir kanala geçer.
 
 > [!IMPORTANT]
 > Kaynak sayfa oynatılabilir bir HLS/DASH/MP4 akışı vermiyorsa, yayın kapalıysa veya erişim yayıncı tarafından engelleniyorsa uygulama akış üretemez. Çözümleyici yalnızca mevcut ve izin verilen medya kaynaklarını bulur.
@@ -48,3 +54,19 @@
 - Son eksiksiz katalog çevrimdışı başlangıcı destekler.
 - Süreli medya URL'leri yalnızca çalışan uygulama oturumunda saklanır.
 - Media3 hatasında iki alternatif akış denemesi yapılır; kullanıcı Kırmızı tuşla dışlanan kaynakları temizleyip tekrar deneyebilir.
+
+## Uygulama içi güncelleme
+
+1. `AppUpdateManager`, açılışta ve Ayarlar içindeki elle denetimde GitHub Releases API'sini okur.
+2. Taslak olmayan kararlı ve ön sürümler semantik etiketle `BuildConfig.VERSION_NAME` değerine
+   göre karşılaştırılır.
+3. Yalnızca HTTPS GitHub/GitHub CDN adresleri ve en fazla 250 MB APK kabul edilir.
+4. APK boyutu GitHub varlık bilgisiyle, içeriği GitHub `digest` alanı veya eş adlı `.sha256`
+   dosyasıyla doğrulanır.
+5. Doğrulanan APK, `FileProvider` üzerinden Android paket yükleyicisine salt okunur URI ile verilir.
+6. Android 8 ve üzerinde gerekirse uygulamaya özel bilinmeyen kaynak izni ekranı açılır.
+7. Normal uygulamalar sessiz paket kurulumu yapamadığı için son onay sistem paket yükleyicisindedir.
+
+Android mevcut paketin üzerine yalnızca aynı sertifika ve daha yüksek `versionCode` ile imzalanmış
+APK kurar. GitHub Actions sürüm iş akışı bu nedenle repository secret içinde tutulan sabit anahtarı
+kullanır. Ayrıntılar `docs/RELEASING.md` belgesindedir.

@@ -7,6 +7,8 @@ GitHub Actions her push ve pull request için şunları çalıştırır:
 - `:app:assembleDebug`
 - `:app:lint`
 - Derlenen debug APK'yı `TurkiyeCanliTV-debug` iş akışı artifact'i olarak yükleme
+- `AppUpdateManager` sürüm karşılaştırması için yerel birim testleri
+- Sürüm iş akışında kalıcı anahtarla imzalı release APK ve SHA-256 üretimi
 
 ## Katalog araştırması — 20 Temmuz 2026
 
@@ -53,6 +55,16 @@ Aşağıdaki kaynak biçimlerini temsil eden, yayın hakkı bakımcı tarafında
 17. Uygulamayı kapatıp açarak son kanal ve ayarların korunduğunu doğrulayın.
 18. İnterneti kapatıp daha önce kaydedilen eksiksiz katalogla açılışı doğrulayın.
 19. Temiz kurulumda internet yokken kısmi kanal listesi yerine görünür hata gösterildiğini doğrulayın.
+20. Sağlam bir kanalda manifest ön denetiminin ardından oynatmanın başladığını doğrulayın.
+21. Bilerek erişilemeyen bir test kaynağının listeden çıkarıldığını ve sonraki kanala geçildiğini
+    doğrulayın.
+22. Uygulamayı yeniden açarak çıkarılan kanalın altı saatlik sağlık süresince gizli kaldığını;
+    `Kanal listesini yenile` sonrasında yeniden sınandığını doğrulayın.
+23. Daha yüksek sürümlü test Release'i yayımlayın; açılış denetiminin güncelleme penceresini
+    gösterdiğini doğrulayın.
+24. APK indirmesinde ilerleme göstergesini, SHA-256 doğrulamasını, bilinmeyen uygulama izni
+    yönlendirmesini ve Android paket kurulum ekranını doğrulayın.
+25. Değiştirilmiş APK veya yanlış `.sha256` dosyasının kuruluma gönderilmediğini doğrulayın.
 
 ## Yayın doğrulama sınırı
 

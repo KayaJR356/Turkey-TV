@@ -71,6 +71,9 @@ public final class MainActivity extends AppCompatActivity {
     private final Map<Integer, Set<String>> failedStreams = new HashMap<>();
     private final Set<Integer> resolvingChannels = Collections.synchronizedSet(new HashSet<>());
     private final ExecutorService resolverExecutor = Executors.newFixedThreadPool(3);
+    private final ExecutorService healthExecutor = Executors.newFixedThreadPool(4);
+    private final Set<Integer> pendingUnavailableChannels =
+            Collections.synchronizedSet(new HashSet<>());
 
     private FrameLayout root;
     private PlayerView playerView;
@@ -100,11 +103,13 @@ public final class MainActivity extends AppCompatActivity {
     private TextView infoSetting;
     private TextView aspectSetting;
     private AlertDialog searchDialog;
+    private AppUpdateManager appUpdateManager;
 
     private int currentIndex;
     private int tuneGeneration;
     private int automaticRetryCount;
     private int loadingAnimationGeneration;
+    private int healthSweepGeneration;
     private boolean waitingForManualStart;
     private boolean resumePlaybackOnStart;
     private String searchQuery = "";
@@ -155,10 +160,12 @@ public final class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        appUpdateManager = new AppUpdateManager(this);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         enterImmersiveMode();
         buildUi();
         loadChannels();
+        appUpdateManager.checkForUpdates(false);
     }
 
     private void buildUi() {
@@ -326,13 +333,14 @@ public final class MainActivity extends AppCompatActivity {
                     showLoading(null);
                     scheduleTopStatusBarHide();
                     if (!channels.isEmpty()) {
+                        ChannelRepository.markAvailable(MainActivity.this, channels.get(currentIndex));
                         showChannelInfo(channels.get(currentIndex));
                         prefetchAdjacentStreams(currentIndex);
                     }
                     root.requestFocus();
                 } else if (playbackState == Player.STATE_ENDED) {
                     setLiveState("SONA ERDİ");
-                    showPlaybackError("Yayın sona erdi");
+                    retryAfterPlayerError();
                 }
             }
 
@@ -486,13 +494,18 @@ public final class MainActivity extends AppCompatActivity {
         }).setText("Geçerli yayını yeniden başlat");
         addSettingRow(() -> {
             showSettingsPanel(false);
+            ChannelRepository.clearUnavailable(this);
             loadChannels();
         }).setText("Kanal listesini yenile");
+        addSettingRow(() -> {
+            showSettingsPanel(false);
+            appUpdateManager.checkForUpdates(true);
+        }).setText("Uygulama güncellemesini denetle");
         addSettingRow(() -> Toast.makeText(this,
                 "Kırmızı: yenile  ·  Yeşil: ara  ·  Sarı: kanallar  ·  Mavi: ayarlar",
                 Toast.LENGTH_LONG).show()).setText("Kumanda tuş rehberi");
         addSettingRow(() -> Toast.makeText(this,
-                "Türkiye Canlı TV 3.3.0 · Yerel Android TV oynatıcısı",
+                "Türkiye Canlı TV " + BuildConfig.VERSION_NAME + " · Yerel Android TV oynatıcısı",
                 Toast.LENGTH_LONG).show()).setText("Uygulama hakkında");
         refreshSettingLabels();
 
@@ -550,6 +563,8 @@ public final class MainActivity extends AppCompatActivity {
     }
 
     private void loadChannels() {
+        int sweepGeneration = ++healthSweepGeneration;
+        pendingUnavailableChannels.clear();
         showLoading("Kanallar hazırlanıyor…");
         new Thread(() -> {
             List<Channel> loaded = ChannelRepository.load(this);
@@ -565,6 +580,7 @@ public final class MainActivity extends AppCompatActivity {
                     return;
                 }
                 startAfterCatalogLoad();
+                uiHandler.postDelayed(() -> startChannelHealthSweep(sweepGeneration), 4_000L);
             });
         }, "channel-catalog").start();
     }
@@ -735,11 +751,6 @@ public final class MainActivity extends AppCompatActivity {
         waitingForManualStart = false;
         showLoading("Yayın yükleniyor…");
 
-        if (channel.isDirectStream()) {
-            playStream(channel.playbackUrl);
-            return;
-        }
-
         String cachedStream = resolvedStreams.get(channel.number);
         Set<String> excluded = failedStreams.get(channel.number);
         if (cachedStream != null && (excluded == null || !excluded.contains(cachedStream))) {
@@ -759,7 +770,8 @@ public final class MainActivity extends AppCompatActivity {
                     resolvedStreams.put(channel.number, resolvedUrl);
                     playStream(resolvedUrl);
                 } else {
-                    showPlaybackError("Bu kanal için yerel yayın bulunamadı");
+                    removeUnavailableCurrentChannel(channel,
+                            "Doğrulanabilir yayın kaynağı bulunamadı");
                 }
             });
         });
@@ -807,8 +819,33 @@ public final class MainActivity extends AppCompatActivity {
                 }
             }, 350L);
         } else {
-            showPlaybackError("Bu kanalın yayını şu anda açılamıyor");
+            removeUnavailableCurrentChannel(channel,
+                    "Tüm alternatif yayınlar başarısız oldu");
         }
+    }
+
+    private void removeUnavailableCurrentChannel(Channel channel, String reason) {
+        int index = findChannelIndexExact(channel.number);
+        if (index < 0) {
+            return;
+        }
+        ChannelRepository.markUnavailable(this, channel);
+        channels.remove(index);
+        resolvedStreams.remove(channel.number);
+        failedStreams.remove(channel.number);
+        pendingUnavailableChannels.remove(channel.number);
+        rebuildChannelList();
+
+        Toast.makeText(this, channel.name + " çalışmadığı için listeden çıkarıldı",
+                Toast.LENGTH_LONG).show();
+        if (channels.isEmpty()) {
+            player.stop();
+            showPlaybackError("Şu anda doğrulanabilen çalışan kanal bulunamadı");
+            return;
+        }
+        currentIndex = Math.min(index, channels.size() - 1);
+        showLoading(reason + ". Sonraki kanal açılıyor…");
+        tune(currentIndex);
     }
 
     private void retryCurrentChannel() {
@@ -839,7 +876,7 @@ public final class MainActivity extends AppCompatActivity {
         };
         for (int index : indexes) {
             Channel channel = channels.get(index);
-            if (channel.isDirectStream() || resolvedStreams.containsKey(channel.number)
+            if (resolvedStreams.containsKey(channel.number)
                     || !resolvingChannels.add(channel.number)) {
                 continue;
             }
@@ -857,6 +894,67 @@ public final class MainActivity extends AppCompatActivity {
                 }
             });
         }
+    }
+
+    private void startChannelHealthSweep(int generation) {
+        if (generation != healthSweepGeneration || channels.isEmpty()) {
+            return;
+        }
+        List<Channel> snapshot = new ArrayList<>(channels);
+        for (Channel channel : snapshot) {
+            if (resolvedStreams.containsKey(channel.number)) {
+                continue;
+            }
+            healthExecutor.execute(() -> {
+                String resolvedUrl = ChannelRepository.resolvePlaybackUrl(channel);
+                if (generation != healthSweepGeneration) {
+                    return;
+                }
+                if (resolvedUrl != null && isPlayableStream(resolvedUrl)) {
+                    runOnUiThread(() -> {
+                        if (generation == healthSweepGeneration
+                                && findChannelIndexExact(channel.number) >= 0) {
+                            resolvedStreams.put(channel.number, resolvedUrl);
+                        }
+                    });
+                    return;
+                }
+                ChannelRepository.markUnavailable(this, channel);
+                pendingUnavailableChannels.add(channel.number);
+                uiHandler.postDelayed(this::applyPendingHealthResults, 500L);
+            });
+        }
+    }
+
+    private void applyPendingHealthResults() {
+        if (pendingUnavailableChannels.isEmpty() || channels.isEmpty()) {
+            return;
+        }
+        Set<Integer> unavailable;
+        synchronized (pendingUnavailableChannels) {
+            unavailable = new HashSet<>(pendingUnavailableChannels);
+            pendingUnavailableChannels.removeAll(unavailable);
+        }
+        int currentNumber = channels.get(currentIndex).number;
+        int removed = 0;
+        for (int index = channels.size() - 1; index >= 0; index--) {
+            Channel channel = channels.get(index);
+            if (channel.number != currentNumber && unavailable.contains(channel.number)) {
+                channels.remove(index);
+                resolvedStreams.remove(channel.number);
+                failedStreams.remove(channel.number);
+                removed++;
+            }
+        }
+        if (removed == 0) {
+            return;
+        }
+        int currentChannelIndex = findChannelIndexExact(currentNumber);
+        currentIndex = currentChannelIndex >= 0 ? currentChannelIndex : 0;
+        rebuildChannelList();
+        refreshChannelRows();
+        Toast.makeText(this, removed + " çalışmayan kanal listeden çıkarıldı",
+                Toast.LENGTH_SHORT).show();
     }
 
     private boolean isPlayableStream(String url) {
@@ -1124,12 +1222,17 @@ public final class MainActivity extends AppCompatActivity {
     }
 
     private int findChannelIndex(int number) {
+        int exact = findChannelIndexExact(number);
+        return exact >= 0 ? exact : 0;
+    }
+
+    private int findChannelIndexExact(int number) {
         for (int i = 0; i < channels.size(); i++) {
             if (channels.get(i).number == number) {
                 return i;
             }
         }
-        return 0;
+        return -1;
     }
 
     private TextView text(String value, int sizeSp) {
@@ -1284,6 +1387,9 @@ public final class MainActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         enterImmersiveMode();
+        if (appUpdateManager != null) {
+            appUpdateManager.onResume();
+        }
     }
 
     @Override
@@ -1297,6 +1403,7 @@ public final class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onDestroy() {
+        healthSweepGeneration++;
         uiHandler.removeCallbacksAndMessages(null);
         if (searchDialog != null) {
             searchDialog.dismiss();
@@ -1304,7 +1411,11 @@ public final class MainActivity extends AppCompatActivity {
         if (player != null) {
             player.release();
         }
+        if (appUpdateManager != null) {
+            appUpdateManager.destroy();
+        }
         resolverExecutor.shutdownNow();
+        healthExecutor.shutdownNow();
         super.onDestroy();
     }
 }

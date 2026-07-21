@@ -8,6 +8,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -38,6 +39,9 @@ final class ChannelRepository {
     private static final String PLAYER_URL = BASE_URL + "/player/index.php?id=%s&mobile=1";
     private static final String PREFS = "tv_settings";
     private static final String CACHE_KEY = "channel_cache_v3";
+    private static final String UNAVAILABLE_KEY = "unavailable_channels_v1";
+    private static final String UNAVAILABLE_SINCE_KEY = "unavailable_channels_since_v1";
+    private static final long UNAVAILABLE_TTL_MS = 6L * 60L * 60L * 1_000L;
     private static final int MINIMUM_COMPLETE_CATALOG_SIZE = 250;
     private static final int MAX_RESOLVE_DEPTH = 3;
     private static final int MAX_DOCUMENT_CHARS = 1_250_000;
@@ -69,6 +73,7 @@ final class ChannelRepository {
             "['\\\"](https?://[^'\\\"<>]+)['\\\"]",
             Pattern.CASE_INSENSITIVE);
     private static final Map<String, String> PREFERRED_STREAMS = createPreferredStreams();
+    private static final Object AVAILABILITY_LOCK = new Object();
 
     private ChannelRepository() {
     }
@@ -78,7 +83,7 @@ final class ChannelRepository {
             List<Channel> online = downloadCatalog();
             if (online.size() >= MINIMUM_COMPLETE_CATALOG_SIZE) {
                 saveCache(context, online);
-                return online;
+                return filterRecentlyUnavailable(context, online);
             }
         } catch (Exception ignored) {
             // The last complete catalogue is a better TV experience than a partial list.
@@ -86,7 +91,7 @@ final class ChannelRepository {
 
         List<Channel> cached = loadCache(context);
         if (cached.size() >= MINIMUM_COMPLETE_CATALOG_SIZE) {
-            return cached;
+            return filterRecentlyUnavailable(context, cached);
         }
         return new ArrayList<>();
     }
@@ -97,7 +102,8 @@ final class ChannelRepository {
 
     static String resolvePlaybackUrl(Channel channel, Set<String> excludedStreams) {
         Set<String> excluded = sanitizeExcludedStreams(excludedStreams);
-        if (channel.isDirectStream() && !excluded.contains(sanitizeUrl(channel.playbackUrl))) {
+        if (channel.isDirectStream() && !excluded.contains(sanitizeUrl(channel.playbackUrl))
+                && isStreamReachable(channel.playbackUrl, channel.pageUrl)) {
             return channel.playbackUrl;
         }
 
@@ -161,7 +167,8 @@ final class ChannelRepository {
         }
         if (isPlayableStream(source)) {
             String stream = sanitizeUrl(source);
-            return excluded.contains(stream) ? null : stream;
+            return excluded.contains(stream) || !isStreamReachable(stream, referer)
+                    ? null : stream;
         }
 
         String normalizedHtml = normalizeDocument(downloadText(source, referer));
@@ -192,7 +199,8 @@ final class ChannelRepository {
         }
 
         for (String candidate : candidates) {
-            if (isPlayableStream(candidate) && !excluded.contains(sanitizeUrl(candidate))) {
+            if (isPlayableStream(candidate) && !excluded.contains(sanitizeUrl(candidate))
+                    && isStreamReachable(candidate, source)) {
                 return candidate;
             }
         }
@@ -319,6 +327,122 @@ final class ChannelRepository {
                 || value.contains("youtube-nocookie.com")
                 || value.contains("googlevideo.com")
                 || value.contains("doubleclick");
+    }
+
+    private static boolean isStreamReachable(String source, String referer) {
+        HttpURLConnection connection = null;
+        try {
+            URL url = new URL(source);
+            if (!"https".equalsIgnoreCase(url.getProtocol())) {
+                return false;
+            }
+            connection = (HttpURLConnection) url.openConnection();
+            connection.setConnectTimeout(4500);
+            connection.setReadTimeout(6500);
+            connection.setInstanceFollowRedirects(true);
+            connection.setRequestProperty("User-Agent", USER_AGENT);
+            connection.setRequestProperty("Accept-Language", "tr-TR,tr;q=0.9");
+            connection.setRequestProperty("Accept", "application/vnd.apple.mpegurl, "
+                    + "application/dash+xml, video/mp4, */*");
+            if (referer != null && referer.startsWith("https://")) {
+                connection.setRequestProperty("Referer", referer);
+            }
+
+            String lower = source.toLowerCase(Locale.ROOT);
+            boolean manifest = lower.contains(".m3u8") || lower.contains(".mpd")
+                    || lower.contains("format=m3u8") || lower.contains("format=mpd");
+            if (!manifest) {
+                connection.setRequestProperty("Range", "bytes=0-1");
+            }
+
+            int status = connection.getResponseCode();
+            if (status != HttpURLConnection.HTTP_OK
+                    && status != HttpURLConnection.HTTP_PARTIAL) {
+                return false;
+            }
+            if (!"https".equalsIgnoreCase(connection.getURL().getProtocol())) {
+                return false;
+            }
+            if (!manifest) {
+                return connection.getContentLength() != 0;
+            }
+
+            try (InputStream input = connection.getInputStream()) {
+                byte[] buffer = new byte[16 * 1024];
+                int read = input.read(buffer);
+                if (read <= 0) {
+                    return false;
+                }
+                String header = new String(buffer, 0, read, StandardCharsets.UTF_8)
+                        .toLowerCase(Locale.ROOT);
+                return lower.contains(".mpd") || lower.contains("format=mpd")
+                        ? header.contains("<mpd") : header.contains("#extm3u");
+            }
+        } catch (Exception ignored) {
+            return false;
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
+    }
+
+    static void markUnavailable(Context context, Channel channel) {
+        synchronized (AVAILABILITY_LOCK) {
+            android.content.SharedPreferences preferences = context.getSharedPreferences(PREFS, 0);
+            Set<String> unavailable = new HashSet<>(preferences.getStringSet(
+                    UNAVAILABLE_KEY, Collections.emptySet()));
+            unavailable.add(normalize(channel.name));
+            long since = preferences.getLong(UNAVAILABLE_SINCE_KEY, 0L);
+            preferences.edit()
+                    .putStringSet(UNAVAILABLE_KEY, unavailable)
+                    .putLong(UNAVAILABLE_SINCE_KEY,
+                            since == 0L ? System.currentTimeMillis() : since)
+                    .apply();
+        }
+    }
+
+    static void markAvailable(Context context, Channel channel) {
+        synchronized (AVAILABILITY_LOCK) {
+            android.content.SharedPreferences preferences = context.getSharedPreferences(PREFS, 0);
+            Set<String> unavailable = new HashSet<>(preferences.getStringSet(
+                    UNAVAILABLE_KEY, Collections.emptySet()));
+            if (unavailable.remove(normalize(channel.name))) {
+                preferences.edit().putStringSet(UNAVAILABLE_KEY, unavailable).apply();
+            }
+        }
+    }
+
+    static void clearUnavailable(Context context) {
+        synchronized (AVAILABILITY_LOCK) {
+            context.getSharedPreferences(PREFS, 0).edit()
+                    .remove(UNAVAILABLE_KEY)
+                    .remove(UNAVAILABLE_SINCE_KEY)
+                    .apply();
+        }
+    }
+
+    private static List<Channel> filterRecentlyUnavailable(Context context, List<Channel> source) {
+        synchronized (AVAILABILITY_LOCK) {
+            android.content.SharedPreferences preferences = context.getSharedPreferences(PREFS, 0);
+            long since = preferences.getLong(UNAVAILABLE_SINCE_KEY, 0L);
+            if (since == 0L || System.currentTimeMillis() - since >= UNAVAILABLE_TTL_MS) {
+                clearUnavailable(context);
+                return source;
+            }
+            Set<String> unavailable = new HashSet<>(preferences.getStringSet(
+                    UNAVAILABLE_KEY, Collections.emptySet()));
+            if (unavailable.isEmpty()) {
+                return source;
+            }
+            ArrayList<Channel> filtered = new ArrayList<>();
+            for (Channel channel : source) {
+                if (!unavailable.contains(normalize(channel.name))) {
+                    filtered.add(channel);
+                }
+            }
+            return filtered;
+        }
     }
 
     private static List<Channel> downloadCatalog() throws Exception {
