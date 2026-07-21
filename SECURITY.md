@@ -6,7 +6,7 @@ Türkiye Canlı TV'de güvenliği ciddiye alıyoruz. Sorumlu bildirim, kullanıc
 
 | Sürüm | Güvenlik desteği |
 | --- | --- |
-| `main` / mevcut `3.1.x` | ✅ |
+| `main` / mevcut `3.3.x` | ✅ |
 | Daha eski sürümler | ❌ |
 
 ## Güvenlik açığı bildirme
@@ -21,7 +21,7 @@ Tercih edilen kanal:
 3. Tekrarlama adımlarını, beklenen etkiyi ve mümkünse güvenli bir kavram kanıtını ekleyin.
 4. Varsa önerilen düzeltmeyi veya azaltma yöntemini paylaşın.
 
-Özel güvenlik bildirimi kullanılamıyorsa alternatif iletişim: **`TODO: Herkese açık olmayan güvenlik e-posta adresi ekleyin.`**
+Özel güvenlik bildirimi kullanılamıyorsa, teknik ayrıntı paylaşmadan [repository sahibinin GitHub profilinde](https://github.com/KayaJR356) sunulan iletişim yöntemlerinden biriyle özel kanal talep edin.
 
 ## Bildirimde bulunması gerekenler
 
@@ -39,7 +39,7 @@ Tercih edilen kanal:
 - Düzeltme ve yayımlama planı belirlenene kadar ayrıntılar gizli tutulur.
 - Uygun olduğunda bildiren kişiye güvenlik duyurusunda teşekkür edilir.
 
-Yanıt ve düzeltme hedef süreleri: **`TODO: Bakım kapasitesine uygun SLA ekleyin.`**
+Bu topluluk projesinde garanti edilen bir yanıt veya düzeltme süresi yoktur. Doğrulanmış ve yüksek etkili bildirimler öncelikli ele alınır.
 
 ## Kapsam notları
 
