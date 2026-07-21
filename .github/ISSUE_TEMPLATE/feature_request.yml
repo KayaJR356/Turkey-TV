@@ -1,0 +1,61 @@
+name: 💡 Özellik önerisi
+description: Çözülecek problemi ve önerilen yaklaşımı paylaşın.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Önce problemi anlatın. Önerinin TV kumandası deneyimi, bakım yükü, güvenlik ve yayın hakları üzerindeki etkisini düşünün.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Hangi kullanıcı problemi çözülmeli?
+      placeholder: "... yaparken zorlanıyorum, çünkü ..."
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Önerilen çözüm
+      description: Beklenen davranışı ve kullanıcı akışını açıklayın.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Değerlendirilen alternatifler
+      description: Varsa mevcut geçici çözümü veya diğer yaklaşımları paylaşın.
+  - type: dropdown
+    id: area
+    attributes:
+      label: İlgili alan
+      options:
+        - Kumanda ve odak deneyimi
+        - Oynatma
+        - Kanal kataloğu
+        - Ayarlar
+        - Erişilebilirlik
+        - Dokümantasyon
+        - Build ve CI
+        - Diğer
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Etki ve riskler
+      description: Uyumluluk, gizlilik, güvenlik, performans veya yayın hakları etkisini belirtin.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Kontrol listesi
+      options:
+        - label: Benzer issue ve pull request'leri aradım.
+          required: true
+        - label: Öneri üçüncü taraf içerik haklarını ihlal etmiyor.
+          required: true
+        - label: Önerinin proje kapsamıyla uyumlu olduğunu düşünüyorum.
+          required: true
