@@ -787,8 +787,12 @@ public final class MainActivity extends AppCompatActivity {
         }
         Channel channel = channels.get(currentIndex);
         if (activeStreamUrl != null) {
-            failedStreams.computeIfAbsent(channel.number, ignored -> new HashSet<>())
-                    .add(activeStreamUrl);
+            Set<String> failed = failedStreams.get(channel.number);
+            if (failed == null) {
+                failed = new HashSet<>();
+                failedStreams.put(channel.number, failed);
+            }
+            failed.add(activeStreamUrl);
         }
         resolvedStreams.remove(channel.number);
         if (automaticRetryCount < 2) {
