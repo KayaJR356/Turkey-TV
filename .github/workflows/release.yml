@@ -67,7 +67,7 @@ jobs:
         id: package
         run: |
           mkdir -p dist
-          APK="Turkiye-TV-${{ steps.version.outputs.version }}-debug.apk"
+          APK="Turkiye-Canli-TV-${{ steps.version.outputs.version }}-debug.apk"
           cp app/build/outputs/apk/debug/app-debug.apk "dist/$APK"
           sha256sum "dist/$APK" > "dist/$APK.sha256"
           echo "apk=$APK" >> "$GITHUB_OUTPUT"
@@ -76,9 +76,9 @@ jobs:
         if: steps.version.outputs.exists == 'false'
         run: |
           printf '%s\n' \
-            '## Türkiye TV ${{ steps.version.outputs.version }}' \
+            '## Türkiye Canlı TV ${{ steps.version.outputs.version }}' \
             '' \
-            'Bu sürüm Android TV ve Google TV arayüzünü, kanal rehberini ve HLS/DASH/MP4 yayın çözümlemeyi yeniler.' \
+            'Bu sürüm kanal geçişini, alternatif yayın çözümlemeyi, menü sürekliliğini ve Android TV açılış deneyimini geliştirir.' \
             '' \
             '### Doğrulama' \
             '- GitHub Actions üzerinde Android debug build başarılı' \
@@ -99,6 +99,6 @@ jobs:
             "dist/${{ steps.package.outputs.apk }}.sha256" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "Türkiye TV ${{ steps.version.outputs.version }} (Debug)" \
+            --title "Türkiye Canlı TV ${{ steps.version.outputs.version }} (Debug)" \
             --notes-file dist/RELEASE_NOTES.md \
             --prerelease

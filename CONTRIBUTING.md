@@ -1,6 +1,6 @@
-# Türkiye TV'ye katkı sağlama
+# Türkiye Canlı TV'ye katkı sağlama
 
-Türkiye TV'yi geliştirmeye ayırdığınız zaman için teşekkürler. Bu rehber, katkıların güvenli, incelenebilir ve proje kapsamıyla uyumlu kalmasını sağlar.
+Türkiye Canlı TV'yi geliştirmeye ayırdığınız zaman için teşekkürler. Bu rehber, katkıların güvenli, incelenebilir ve proje kapsamıyla uyumlu kalmasını sağlar.
 
 ## Başlamadan önce
 

@@ -6,7 +6,7 @@ GitHub Actions her push ve pull request için şunları çalıştırır:
 
 - `:app:assembleDebug`
 - `:app:lint`
-- Derlenen debug APK'yı `TurkiyeTV-debug` iş akışı artifact'i olarak yükleme
+- Derlenen debug APK'yı `TurkiyeCanliTV-debug` iş akışı artifact'i olarak yükleme
 
 ## Katalog araştırması — 20 Temmuz 2026
 
@@ -34,22 +34,25 @@ Aşağıdaki kaynak biçimlerini temsil eden, yayın hakkı bakımcı tarafında
 
 ## Android TV kabul testi
 
-1. Uygulamayı TV başlatıcısındaki Türkiye TV banner'ından açın.
+1. Uygulamayı TV başlatıcısındaki Türkiye Canlı TV banner'ından açın.
 2. Yeni splash ekranı ve üst durum şeridinin 720p/1080p/4K arayüz ölçeklerinde taşmadığını doğrulayın.
 3. İlk açılış seçeneklerinin yalnızca bir kez gösterildiğini doğrulayın.
 4. Son izlenen, 1. kanal ve kanal rehberi başlangıç seçeneklerini ayrı ayrı sınayın.
 5. İzleme ekranında dört yön tuşunun kanal değiştirmediğini doğrulayın.
 6. `Program + / -` ve numara tuşlarıyla kanal değiştirin.
 7. OK ile rehberi açın; odağın mevcut kanala geldiğini ve listenin doğru satıra kaydığını doğrulayın.
-8. Arama sonucundan kanal seçin, aramayı temizleyin ve gerçek kanal numarasının korunduğunu doğrulayın.
-9. Kırmızı, Yeşil, Sarı ve Mavi tuş görevlerini ayrı ayrı sınayın.
-10. Ayar panelindeki tüm seçenekleri değiştirip kalıcı olduklarını doğrulayın.
-11. Kanal değişiminde `Yükleniyor`, `Canlı` ve hata rozetlerinin doğru geçiş yaptığını doğrulayın.
-12. Görüntü oranını Orijinal, Yakınlaştır ve Doldur arasında değiştirin.
-13. Oynatma hatasında otomatik tek yeniden denemeyi ve Kırmızı tuşla elle yenilemeyi doğrulayın.
-14. Uygulamayı kapatıp açarak son kanal ve ayarların korunduğunu doğrulayın.
-15. İnterneti kapatıp daha önce kaydedilen eksiksiz katalogla açılışı doğrulayın.
-16. Temiz kurulumda internet yokken kısmi kanal listesi yerine görünür hata gösterildiğini doğrulayın.
+8. Kanal oynarken rehberi açıp kapatın; oynatıcının yeniden yüklenmediğini doğrulayın.
+9. Üst durum göstergesinin oynatma başladıktan sonra kendiliğinden gizlendiğini doğrulayın.
+10. Arama sonucundan kanal seçin, aramayı temizleyin ve gerçek kanal numarasının korunduğunu doğrulayın.
+11. Kırmızı, Yeşil, Sarı ve Mavi tuş görevlerini ayrı ayrı sınayın.
+12. Ayar panelindeki tüm seçenekleri değiştirip kalıcı olduklarını doğrulayın.
+13. Kanal değişiminde `Yükleniyor`, `Canlı` ve hata rozetlerinin doğru geçiş yaptığını doğrulayın.
+14. Görüntü oranını Orijinal, Yakınlaştır ve Doldur arasında değiştirin.
+15. Oynatma hatasında alternatif akışa otomatik geçişi ve Kırmızı tuşla elle yenilemeyi doğrulayın.
+16. `Cihaz açılışı` ayarını etkinleştirip desteklenen test cihazında yeniden başlatma davranışını doğrulayın.
+17. Uygulamayı kapatıp açarak son kanal ve ayarların korunduğunu doğrulayın.
+18. İnterneti kapatıp daha önce kaydedilen eksiksiz katalogla açılışı doğrulayın.
+19. Temiz kurulumda internet yokken kısmi kanal listesi yerine görünür hata gösterildiğini doğrulayın.
 
 ## Yayın doğrulama sınırı
 

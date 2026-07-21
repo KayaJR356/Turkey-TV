@@ -35,11 +35,16 @@ import androidx.media3.ui.PlayerView;
 
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 @UnstableApi
 public final class MainActivity extends AppCompatActivity {
@@ -48,8 +53,10 @@ public final class MainActivity extends AppCompatActivity {
     private static final String ONBOARDING_KEY = "onboarding_complete";
     private static final String STARTUP_MODE_KEY = "startup_mode";
     private static final String STARTUP_AUTOPLAY_KEY = "startup_autoplay";
+    private static final String AUTO_LAUNCH_KEY = "auto_launch_on_boot";
     private static final String INFO_SECONDS_KEY = "info_seconds";
     private static final String ASPECT_MODE_KEY = "aspect_mode";
+    private static final long TOP_STATUS_VISIBLE_MS = 2_500L;
     private static final String SITE_ORIGIN = "https://www.canlitv.diy";
     private static final String PLAYER_USER_AGENT =
             "Mozilla/5.0 (Linux; Android 12; Android TV) "
@@ -61,6 +68,9 @@ public final class MainActivity extends AppCompatActivity {
     private final List<TextView> channelRows = new ArrayList<>();
     private final List<TextView> settingsRows = new ArrayList<>();
     private final Map<Integer, String> resolvedStreams = new HashMap<>();
+    private final Map<Integer, Set<String>> failedStreams = new HashMap<>();
+    private final Set<Integer> resolvingChannels = Collections.synchronizedSet(new HashSet<>());
+    private final ExecutorService resolverExecutor = Executors.newFixedThreadPool(3);
 
     private FrameLayout root;
     private PlayerView playerView;
@@ -86,6 +96,7 @@ public final class MainActivity extends AppCompatActivity {
     private TextView channelSettingsButton;
     private TextView startupSetting;
     private TextView autoplaySetting;
+    private TextView autoLaunchSetting;
     private TextView infoSetting;
     private TextView aspectSetting;
     private AlertDialog searchDialog;
@@ -93,9 +104,11 @@ public final class MainActivity extends AppCompatActivity {
     private int currentIndex;
     private int tuneGeneration;
     private int automaticRetryCount;
+    private int loadingAnimationGeneration;
     private boolean waitingForManualStart;
     private boolean resumePlaybackOnStart;
     private String searchQuery = "";
+    private String activeStreamUrl;
 
     private final Runnable tuneEnteredNumber = () -> {
         if (numberBuffer.length() == 0) {
@@ -113,6 +126,18 @@ public final class MainActivity extends AppCompatActivity {
             .setDuration(160)
             .withEndAction(() -> channelInfo.setVisibility(View.GONE))
             .start();
+    private final Runnable hideTopStatusBar = () -> {
+        if (topStatusBar == null || player == null
+                || player.getPlaybackState() != Player.STATE_READY
+                || channelPanel.getVisibility() == View.VISIBLE
+                || settingsPanel.getVisibility() == View.VISIBLE) {
+            return;
+        }
+        topStatusBar.animate().cancel();
+        topStatusBar.animate().alpha(0f).translationY(-dp(24)).setDuration(180)
+                .withEndAction(() -> topStatusBar.setVisibility(View.GONE))
+                .start();
+    };
     private final Runnable updateClock = new Runnable() {
         @Override
         public void run() {
@@ -223,7 +248,7 @@ public final class MainActivity extends AppCompatActivity {
         nowPlayingNumber.setPadding(0, 0, 0, dp(1));
         channelIdentity.addView(nowPlayingNumber);
 
-        nowPlayingTitle = text("Türkiye TV", 24);
+        nowPlayingTitle = text("Türkiye Canlı TV", 24);
         nowPlayingTitle.setTypeface(nowPlayingTitle.getTypeface(), android.graphics.Typeface.BOLD);
         nowPlayingTitle.setSingleLine(true);
         nowPlayingTitle.setPadding(0, 0, 0, 0);
@@ -299,8 +324,10 @@ public final class MainActivity extends AppCompatActivity {
                     automaticRetryCount = 0;
                     setLiveState("● CANLI");
                     showLoading(null);
+                    scheduleTopStatusBarHide();
                     if (!channels.isEmpty()) {
                         showChannelInfo(channels.get(currentIndex));
+                        prefetchAdjacentStreams(currentIndex);
                     }
                     root.requestFocus();
                 } else if (playbackState == Player.STATE_ENDED) {
@@ -332,7 +359,7 @@ public final class MainActivity extends AppCompatActivity {
         titleRow.setOrientation(LinearLayout.HORIZONTAL);
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
 
-        TextView title = text("Türkiye TV", 30);
+        TextView title = text("Türkiye Canlı TV", 30);
         title.setTypeface(title.getTypeface(), android.graphics.Typeface.BOLD);
         titleRow.addView(title, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
@@ -431,6 +458,15 @@ public final class MainActivity extends AppCompatActivity {
             getSharedPreferences(PREFS, 0).edit().putBoolean(STARTUP_AUTOPLAY_KEY, !current).apply();
             refreshSettingLabels();
         });
+        autoLaunchSetting = addSettingRow(() -> {
+            boolean current = getSharedPreferences(PREFS, 0).getBoolean(AUTO_LAUNCH_KEY, false);
+            getSharedPreferences(PREFS, 0).edit().putBoolean(AUTO_LAUNCH_KEY, !current).apply();
+            refreshSettingLabels();
+            Toast.makeText(this, !current
+                            ? "Cihaz yeniden açıldığında Türkiye Canlı TV başlatılacak"
+                            : "Otomatik başlatma kapatıldı",
+                    Toast.LENGTH_SHORT).show();
+        });
         infoSetting = addSettingRow(() -> {
             int current = getSharedPreferences(PREFS, 0).getInt(INFO_SECONDS_KEY, 5);
             int next = current == 5 ? 8 : current == 8 ? 0 : 5;
@@ -456,7 +492,7 @@ public final class MainActivity extends AppCompatActivity {
                 "Kırmızı: yenile  ·  Yeşil: ara  ·  Sarı: kanallar  ·  Mavi: ayarlar",
                 Toast.LENGTH_LONG).show()).setText("Kumanda tuş rehberi");
         addSettingRow(() -> Toast.makeText(this,
-                "Türkiye TV 3.2.0 · Yerel Android TV oynatıcısı",
+                "Türkiye Canlı TV 3.3.0 · Yerel Android TV oynatıcısı",
                 Toast.LENGTH_LONG).show()).setText("Uygulama hakkında");
         refreshSettingLabels();
 
@@ -489,6 +525,9 @@ public final class MainActivity extends AppCompatActivity {
         autoplaySetting.setText("Açılışta oynat  ·  "
                 + (getSharedPreferences(PREFS, 0).getBoolean(STARTUP_AUTOPLAY_KEY, true)
                 ? "Açık" : "Kapalı"));
+        autoLaunchSetting.setText("Cihaz açılışı  ·  "
+                + (getSharedPreferences(PREFS, 0).getBoolean(AUTO_LAUNCH_KEY, false)
+                ? "Bu uygulamayı başlat" : "Başlatma"));
         int seconds = getSharedPreferences(PREFS, 0).getInt(INFO_SECONDS_KEY, 5);
         infoSetting.setText("Kanal bilgisi  ·  " + (seconds == 0 ? "Kapalı" : seconds + " saniye"));
         String aspect = getSharedPreferences(PREFS, 0).getString(ASPECT_MODE_KEY, "fit");
@@ -551,7 +590,10 @@ public final class MainActivity extends AppCompatActivity {
             row.setBackgroundResource(R.drawable.channel_row_background);
             row.setOnFocusChangeListener(this::styleFocusedRow);
             row.setOnClickListener(view -> {
-                tune((Integer) view.getTag());
+                int selectedIndex = (Integer) view.getTag();
+                if (selectedIndex != currentIndex || !isCurrentChannelActive()) {
+                    tune(selectedIndex);
+                }
                 showChannelPanel(false);
             });
 
@@ -621,7 +663,7 @@ public final class MainActivity extends AppCompatActivity {
         String[] options = {"Son izlenen kanalı aç", "Her zaman 1. kanalı aç", "Kanal listesini aç"};
         final int[] selection = {0};
         AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle("Türkiye TV'ye hoş geldiniz")
+                .setTitle("Türkiye Canlı TV'ye hoş geldiniz")
                 .setSingleChoiceItems(options, 0, (itemDialog, which) -> selection[0] = which)
                 .setPositiveButton("Başla", (itemDialog, which) -> {
                     String mode = selection[0] == 1 ? "first" : selection[0] == 2 ? "menu" : "last";
@@ -659,6 +701,12 @@ public final class MainActivity extends AppCompatActivity {
         if (index < 0 || index >= channels.size()) {
             return;
         }
+        if (index == currentIndex && startPlayback && isCurrentChannelActive()) {
+            showChannelPanel(false);
+            showSettingsPanel(false);
+            scheduleTopStatusBarHide();
+            return;
+        }
         currentIndex = index;
         refreshChannelRows();
         tuneGeneration++;
@@ -671,6 +719,7 @@ public final class MainActivity extends AppCompatActivity {
         channelInfo.setVisibility(View.GONE);
         player.stop();
         player.clearMediaItems();
+        activeStreamUrl = null;
         getSharedPreferences(PREFS, 0).edit().putInt(LAST_CHANNEL_KEY, channel.number).apply();
 
         if (!startPlayback) {
@@ -692,13 +741,16 @@ public final class MainActivity extends AppCompatActivity {
         }
 
         String cachedStream = resolvedStreams.get(channel.number);
-        if (cachedStream != null) {
+        Set<String> excluded = failedStreams.get(channel.number);
+        if (cachedStream != null && (excluded == null || !excluded.contains(cachedStream))) {
             playStream(cachedStream);
             return;
         }
 
-        new Thread(() -> {
-            String resolvedUrl = ChannelRepository.resolvePlaybackUrl(channel);
+        Set<String> excludedSnapshot = excluded == null
+                ? Collections.emptySet() : new HashSet<>(excluded);
+        resolverExecutor.execute(() -> {
+            String resolvedUrl = ChannelRepository.resolvePlaybackUrl(channel, excludedSnapshot);
             runOnUiThread(() -> {
                 if (generation != tuneGeneration) {
                     return;
@@ -710,10 +762,11 @@ public final class MainActivity extends AppCompatActivity {
                     showPlaybackError("Bu kanal için yerel yayın bulunamadı");
                 }
             });
-        }, "stream-resolver").start();
+        });
     }
 
     private void playStream(String url) {
+        activeStreamUrl = url;
         String value = url.toLowerCase(Locale.ROOT);
         MediaItem.Builder item = new MediaItem.Builder().setUri(url);
         if (value.contains(".m3u8") || value.contains("format=m3u8")) {
@@ -732,17 +785,27 @@ public final class MainActivity extends AppCompatActivity {
             showPlaybackError("Yayın açılamadı");
             return;
         }
-        if (automaticRetryCount < 1) {
+        Channel channel = channels.get(currentIndex);
+        if (activeStreamUrl != null) {
+            Set<String> failed = failedStreams.get(channel.number);
+            if (failed == null) {
+                failed = new HashSet<>();
+                failedStreams.put(channel.number, failed);
+            }
+            failed.add(activeStreamUrl);
+        }
+        resolvedStreams.remove(channel.number);
+        if (automaticRetryCount < 2) {
             automaticRetryCount++;
             int generation = tuneGeneration;
-            Channel channel = channels.get(currentIndex);
-            resolvedStreams.remove(channel.number);
-            showLoading("Yayın yeniden deneniyor…");
+            showLoading(automaticRetryCount == 1
+                    ? "Alternatif yayın deneniyor…"
+                    : "Kanal kaynağı yenileniyor…");
             uiHandler.postDelayed(() -> {
                 if (generation == tuneGeneration) {
                     startChannelPlayback(channel, generation);
                 }
-            }, 1500);
+            }, 350L);
         } else {
             showPlaybackError("Bu kanalın yayını şu anda açılamıyor");
         }
@@ -753,7 +816,47 @@ public final class MainActivity extends AppCompatActivity {
             return;
         }
         resolvedStreams.remove(channels.get(currentIndex).number);
+        failedStreams.remove(channels.get(currentIndex).number);
+        player.stop();
         tune(currentIndex);
+    }
+
+    private boolean isCurrentChannelActive() {
+        return player != null
+                && player.getCurrentMediaItem() != null
+                && player.getPlaybackState() != Player.STATE_IDLE
+                && player.getPlaybackState() != Player.STATE_ENDED
+                && player.getPlayerError() == null;
+    }
+
+    private void prefetchAdjacentStreams(int centerIndex) {
+        if (channels.size() < 2) {
+            return;
+        }
+        int[] indexes = {
+                (centerIndex + 1) % channels.size(),
+                (centerIndex - 1 + channels.size()) % channels.size()
+        };
+        for (int index : indexes) {
+            Channel channel = channels.get(index);
+            if (channel.isDirectStream() || resolvedStreams.containsKey(channel.number)
+                    || !resolvingChannels.add(channel.number)) {
+                continue;
+            }
+            Set<String> excluded = failedStreams.get(channel.number);
+            Set<String> excludedSnapshot = excluded == null
+                    ? Collections.emptySet() : new HashSet<>(excluded);
+            resolverExecutor.execute(() -> {
+                try {
+                    String resolvedUrl = ChannelRepository.resolvePlaybackUrl(channel, excludedSnapshot);
+                    if (resolvedUrl != null && isPlayableStream(resolvedUrl)) {
+                        runOnUiThread(() -> resolvedStreams.put(channel.number, resolvedUrl));
+                    }
+                } finally {
+                    resolvingChannels.remove(channel.number);
+                }
+            });
+        }
     }
 
     private boolean isPlayableStream(String url) {
@@ -776,6 +879,7 @@ public final class MainActivity extends AppCompatActivity {
     }
 
     private void setLiveState(String state) {
+        showTopStatusBar();
         if (liveBadge != null) {
             liveBadge.setText(state);
         }
@@ -786,6 +890,7 @@ public final class MainActivity extends AppCompatActivity {
     }
 
     private void showChannelInfo(Channel channel, boolean force) {
+        showTopStatusBar();
         updateNowPlaying(channel);
         channelInfo.setText(String.format(Locale.forLanguageTag("tr-TR"),
                 "%03d  %s\nP+ / P-  Kanal    •    OK  Rehber    •    INFO  Detay",
@@ -800,8 +905,12 @@ public final class MainActivity extends AppCompatActivity {
         int seconds = getSharedPreferences(PREFS, 0).getInt(INFO_SECONDS_KEY, 5);
         if (seconds == 0 && !force) {
             channelInfo.setVisibility(View.GONE);
+            scheduleTopStatusBarHide();
         } else {
             uiHandler.postDelayed(hideChannelInfo, (seconds == 0 ? 5 : seconds) * 1000L);
+            uiHandler.removeCallbacks(hideTopStatusBar);
+            uiHandler.postDelayed(hideTopStatusBar,
+                    Math.max(TOP_STATUS_VISIBLE_MS, (seconds == 0 ? 5 : seconds) * 1000L));
         }
     }
 
@@ -812,11 +921,14 @@ public final class MainActivity extends AppCompatActivity {
     }
 
     private void showLoading(String message) {
+        int animationGeneration = ++loadingAnimationGeneration;
         if (message == null) {
             loadingOverlay.animate().cancel();
             loadingOverlay.animate().alpha(0f).setDuration(180).withEndAction(() -> {
-                loadingOverlay.setVisibility(View.GONE);
-                loadingOverlay.setAlpha(1f);
+                if (animationGeneration == loadingAnimationGeneration) {
+                    loadingOverlay.setVisibility(View.GONE);
+                    loadingOverlay.setAlpha(1f);
+                }
             }).start();
             return;
         }
@@ -831,8 +943,43 @@ public final class MainActivity extends AppCompatActivity {
         settingsPanel.bringToFront();
     }
 
+    private void showTopStatusBar() {
+        if (topStatusBar == null
+                || channelPanel.getVisibility() == View.VISIBLE
+                || settingsPanel.getVisibility() == View.VISIBLE) {
+            return;
+        }
+        uiHandler.removeCallbacks(hideTopStatusBar);
+        topStatusBar.animate().cancel();
+        topStatusBar.setVisibility(View.VISIBLE);
+        topStatusBar.setAlpha(1f);
+        topStatusBar.setTranslationY(0f);
+        topStatusBar.bringToFront();
+        loadingOverlay.bringToFront();
+        channelInfo.bringToFront();
+        channelPanel.bringToFront();
+        settingsPanel.bringToFront();
+    }
+
+    private void scheduleTopStatusBarHide() {
+        showTopStatusBar();
+        uiHandler.postDelayed(hideTopStatusBar, TOP_STATUS_VISIBLE_MS);
+    }
+
+    private void hideTopStatusBarNow() {
+        if (topStatusBar == null) {
+            return;
+        }
+        uiHandler.removeCallbacks(hideTopStatusBar);
+        topStatusBar.animate().cancel();
+        topStatusBar.setVisibility(View.GONE);
+        topStatusBar.setAlpha(1f);
+        topStatusBar.setTranslationY(0f);
+    }
+
     private void showSettingsPanel(boolean show) {
         if (show) {
+            hideTopStatusBarNow();
             channelPanel.animate().cancel();
             channelPanel.setVisibility(View.GONE);
             settingsPanel.animate().cancel();
@@ -846,6 +993,9 @@ public final class MainActivity extends AppCompatActivity {
                 settingsRows.get(0).requestFocus();
             }
         } else {
+            if (player != null && player.getPlaybackState() == Player.STATE_READY) {
+                scheduleTopStatusBarHide();
+            }
             settingsPanel.animate().cancel();
             if (settingsPanel.getVisibility() == View.VISIBLE) {
                 settingsPanel.animate().alpha(0f).translationX(dp(100)).setDuration(150)
@@ -863,6 +1013,7 @@ public final class MainActivity extends AppCompatActivity {
 
     private void showChannelPanel(boolean show) {
         if (show) {
+            hideTopStatusBarNow();
             settingsPanel.animate().cancel();
             settingsPanel.setVisibility(View.GONE);
             channelPanel.animate().cancel();
@@ -895,6 +1046,9 @@ public final class MainActivity extends AppCompatActivity {
                 channelSearchButton.requestFocus();
             }
         } else {
+            if (player != null && player.getPlaybackState() == Player.STATE_READY) {
+                scheduleTopStatusBarHide();
+            }
             channelPanel.animate().cancel();
             if (channelPanel.getVisibility() == View.VISIBLE) {
                 channelPanel.animate().alpha(0f).translationX(-dp(100)).setDuration(150)
@@ -1150,6 +1304,7 @@ public final class MainActivity extends AppCompatActivity {
         if (player != null) {
             player.release();
         }
+        resolverExecutor.shutdownNow();
         super.onDestroy();
     }
 }

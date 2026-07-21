@@ -1,4 +1,4 @@
-# Türkiye TV
+# Türkiye Canlı TV
 
 <div align="center">
 
@@ -18,14 +18,14 @@
 > [!NOTE]
 > 🖼️ **Banner alanı:** `docs/assets/banner.png` eklendiğinde bu notu proje banner'ı ile değiştirin. Önerilen oran: **3:1**.
 
-Türkiye TV; canlı kanal kataloğunu yenileyen, uygun HLS/DASH akışlarını Media3 ile oynatan ve TV kumandası için tasarlanmış açık kaynak bir Android uygulamasıdır. Büyük ekran odak davranışı, kanal arama, hızlı kanal seçimi ve çevrimdışı katalog önbelleğiyle koltuktan kullanıma odaklanır.
+Türkiye Canlı TV; canlı kanal kataloğunu yenileyen, uygun HLS/DASH/MP4 akışlarını Media3 ile oynatan ve TV kumandası için tasarlanmış açık kaynak bir Android uygulamasıdır. Büyük ekran odak davranışı, hızlı kanal seçimi, alternatif yayın geçişi ve çevrimdışı katalog önbelleğiyle koltuktan kullanıma odaklanır.
 
 > [!IMPORTANT]
 > Bu proje yayın içeriği barındırmaz veya yayın hakları sağlamaz. Kanal erişilebilirliği, görüntü kalitesi ve coğrafi kısıtlamalar ilgili yayıncıya bağlıdır.
 
 ## İçindekiler
 
-- [Neden Türkiye TV?](#why)
+- [Neden Türkiye Canlı TV?](#why)
 - [Özellikler](#features)
 - [Ekran görüntüleri](#screenshots)
 - [Demo](#demo)
@@ -40,9 +40,9 @@ Türkiye TV; canlı kanal kataloğunu yenileyen, uygun HLS/DASH akışlarını M
 - [Teşekkürler](#acknowledgements)
 
 <a id="why"></a>
-## Neden Türkiye TV?
+## Neden Türkiye Canlı TV?
 
-| İhtiyaç | Türkiye TV'nin yaklaşımı |
+| İhtiyaç | Türkiye Canlı TV'nin yaklaşımı |
 | --- | --- |
 | TV'de kolay gezinme | D-pad, numara, renkli işlev ve medya tuşlarına uygun arayüz |
 | Yerel oynatma | HLS/DASH akışlarını Media3/ExoPlayer ile tam ekranda oynatma |
@@ -62,8 +62,11 @@ Türkiye TV; canlı kanal kataloğunu yenileyen, uygun HLS/DASH akışlarını M
 - Son izlenen kanal, başlangıç davranışı, otomatik oynatma ve bilgi süresi ayarları
 - Orijinal, yakınlaştır ve ekranı doldur görüntü oranı seçenekleri
 - Son eksiksiz kanal kataloğunu cihazda güvenli biçimde önbelleğe alma
-- Otomatik tek yeniden deneme ve Kırmızı tuşla elle yayın yenileme
-- Splash ekranı, yükleme durumu, saat ve mevcut kanal göstergesi
+- Bozuk akışta alternatif URL deneme ve komşu kanalları arka planda ön çözümleme
+- Kırmızı tuşla elle yayın yenileme
+- Cihaz açılışında uygulamayı otomatik başlatma seçeneği
+- Oynatma başlayınca kendiliğinden gizlenen üst durum göstergesi
+- Menü açıp kapatıldığında kesintisiz oynatma
 - Her push ve pull request'te debug APK derleme ve Android Lint kontrolü
 
 > [!NOTE]
@@ -83,8 +86,8 @@ Türkiye TV; canlı kanal kataloğunu yenileyen, uygun HLS/DASH akışlarını M
 ## 🎬 Demo
 
 - **Video/GIF:** `TODO: Demo bağlantısı veya docs/assets/demo.gif`
-- **Sürüm sayfası:** [v3.2.0](https://github.com/KayaJR356/Turkey-TV/releases/tag/v3.2.0)
-- **CI çıktısı:** Başarılı GitHub Actions çalışmasındaki `TurkiyeTV-debug` artifact'i
+- **Sürüm sayfası:** [v3.3.0](https://github.com/KayaJR356/Turkey-TV/releases/tag/v3.3.0)
+- **CI çıktısı:** Başarılı GitHub Actions çalışmasındaki `TurkiyeCanliTV-debug` artifact'i
 
 <a id="installation"></a>
 ## Kurulum
@@ -130,6 +133,8 @@ gradle :app:assembleDebug :app:lint
 
 İlk açılışta başlangıç davranışını seçin. Ardından kumandanızla kanal değiştirebilir, kanal listesinde gezinebilir ve oynatma ayarlarını yönetebilirsiniz.
 
+`Ayarlar > Cihaz açılışı` seçeneğini **Bu uygulamayı başlat** olarak ayarlarsanız destekleyen Android TV cihazlarında uygulama cihaz açıldıktan sonra otomatik başlar. Bazı üretici yazılımları arka plandan başlatmayı engelleyebilir.
+
 | Tuş | İşlev |
 | --- | --- |
 | `Program + / -` | Sonraki / önceki kanal |
@@ -161,6 +166,7 @@ Turkey-TV/
 │   └── src/main/
 │       ├── AndroidManifest.xml
 │       ├── java/tv/kaya/turksat/
+│       │   ├── BootReceiver.java
 │       │   ├── Channel.java
 │       │   ├── ChannelRepository.java
 │       │   ├── MainActivity.java
@@ -195,6 +201,8 @@ Turkey-TV/
 - [x] CI üzerinde debug build ve Android Lint
 - [ ] `TODO:` Proje banner'ı ve gerçek ekran görüntüleri
 - [x] Sürümlenmiş debug GitHub Release ve SHA-256 checksum
+- [x] Alternatif akış geçişi ve komşu kanal ön çözümlemesi
+- [x] İsteğe bağlı cihaz açılışında otomatik başlatma
 - [ ] `TODO:` Üretim anahtarıyla imzalı kararlı APK dağıtımı
 - [ ] `TODO:` Birim/entegrasyon test kapsamı hedefi
 - [ ] `TODO:` Bakımcı tarafından onaylanmış gelecek özellikler
@@ -241,5 +249,5 @@ Kanal adları, logoları, yayınları ve üçüncü taraf hizmetleri kendi sahip
 ---
 
 <div align="center">
-Türkiye TV'yi yararlı bulduysanız repository'yi ⭐ ile destekleyebilirsiniz.
+Türkiye Canlı TV'yi yararlı bulduysanız repository'yi ⭐ ile destekleyebilirsiniz.
 </div>
