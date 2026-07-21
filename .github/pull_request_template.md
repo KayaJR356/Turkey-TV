@@ -1,31 +1,45 @@
-# Pull Request
-
 ## Özet
 
-<!-- Değişikliği ve çözdüğü problemi kısaca açıklayın. -->
+<!-- Ne değişti? 2–4 maddeyle açıklayın. -->
+
+-
+
+## Motivasyon
+
+<!-- Bu değişiklik hangi problemi çözüyor? -->
+
+Closes #
 
 ## Değişiklik türü
 
 - [ ] Hata düzeltmesi
 - [ ] Yeni özellik
 - [ ] Dokümantasyon
-- [ ] Bakım / teknik iyileştirme
+- [ ] Test / CI
+- [ ] Bakım / refactor
 
 ## Doğrulama
 
-- [ ] `gradle :app:assembleDebug :app:lint` başarılı
-- [ ] Android TV / Google TV cihazında veya emülatörde kontrol edildi
-- [ ] İlgili testler ve belgeler güncellendi
-- [ ] Gizli bilgi, yayın anahtarı veya kişisel veri eklenmedi
+<!-- Çalıştırdığınız komutları ve manuel testleri yazın. -->
 
-## Test adımları
+```text
+gradle :app:assembleDebug :app:lint
+```
 
-<!-- İnceleyenin değişikliği nasıl doğrulayacağını yazın. -->
+- Test edilen cihaz/emülatör:
+- Android sürümü:
+- Sonuç:
 
-## Görsel kanıt
+## Görsel değişiklikler
 
-<!-- Arayüz değişikliği varsa önce/sonra ekran görüntüsü veya video ekleyin. -->
+<!-- TV arayüzü değiştiyse telifsiz veya sansürlenmiş önce/sonra görüntüleri ekleyin. Değilse "Yok" yazın. -->
 
-## İlgili issue
+## Kontrol listesi
 
-Closes #
+- [ ] Değişiklik tek bir amaca odaklanıyor.
+- [ ] Build ve ilgili testler başarılı.
+- [ ] Yeni uyarı veya hassas veri eklenmedi.
+- [ ] Gerekli belgeler ve `CHANGELOG.md` güncellendi.
+- [ ] Üçüncü taraf içerik, yayın adresi veya varlık için gerekli haklara sahibim.
+- [ ] Geriye dönük uyumsuz değişiklikleri açıkça belirttim.
+- [ ] [CONTRIBUTING.md](../CONTRIBUTING.md) ve [CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md) kurallarına uyuyorum.

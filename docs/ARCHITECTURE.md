@@ -6,37 +6,41 @@
 2. `ft_<oynatıcı-kimliği> tv` sınıfına sahip kanal satırlarından ad, sayfa bağlantısı ve oynatıcı kimliği alınır.
 3. Kanallar sayfadaki sıraya göre 1'den başlayarak numaralandırılır.
 4. En az 250 kayıt dönmeyen yanıt eksik kabul edilir ve kaydedilmez.
-5. Ağ veya site hatasında yalnızca daha önce kaydedilmiş eksiksiz katalog kullanılır. Eksiksiz katalog yoksa kullanıcıya hata gösterilir; dokuz kanallı kısmi bir listeye düşülmez.
+5. Ağ veya site hatasında yalnızca daha önce kaydedilmiş eksiksiz katalog kullanılır. Eksiksiz katalog yoksa kullanıcıya hata gösterilir.
 
 ## Oynatma
 
-1. TRT ve doğrulanmış birkaç yayın için tercih edilen HLS adresi katalog oluşturulurken atanır.
-2. Diğer kanallarda kaynak sitenin oynatıcı sayfası arka planda indirilir.
-3. HLS (`.m3u8`) veya DASH (`.mpd`) adresi bulunursa Media3/ExoPlayer doğrudan oynatır.
-4. İç içe iframe oynatıcıları en fazla üç seviye izlenir; YouTube ve tarayıcıya özel kaynaklar atlanır.
-5. Doğrudan uyarlanabilir akış bulunmazsa web geri dönüşü yapılmaz ve kullanıcıya yerel yayın bulunamadığı gösterilir.
-6. Kanal değişiminde eski çözümleme sonucu kuşak numarasıyla iptal edilir; geç tamamlanan ağ yanıtı yeni kanalın üzerine yazamaz.
+1. Doğrulanmış resmî akışlar varsa kanal adına göre tercih edilir.
+2. Diğer kanallarda kaynak sitenin oynatıcı uç noktası indirilir.
+3. HLS (`.m3u8`), DASH (`.mpd`) ve Media3'ün desteklediği doğrudan MP4 kaynakları aranır.
+4. JavaScript kaçışları, HTML entity'leri, percent-encoded URL'ler ve sınırlı base64 oynatıcı değerleri normalize edilir.
+5. `iframe`, `video`, `source`, `data-src` ve `data-lazy-src` kaynakları en fazla beş seviye izlenir.
+6. Oynatıcı uç noktası sonuç vermezse kanal sayfası aynı güvenli çözümleme hattıyla denenir.
+7. Reklam/izleme adresleri ile YouTube ve tarayıcıya özel kaynaklar yerel medya URL'si olarak kabul edilmez.
+8. Media3 için HLS/DASH MIME türü açıkça atanır. Kaynak uyumluluğu için katalog `Referer` başlığı korunur; farklı CDN'leri engelleyebilen zorunlu `Origin` başlığı uygulanmaz.
+9. Kanal değişiminde eski çözümleme sonucu kuşak numarasıyla iptal edilir; geç tamamlanan ağ yanıtı yeni kanalın üzerine yazamaz.
+
+> [!IMPORTANT]
+> Kaynak sayfa oynatılabilir bir HLS/DASH/MP4 akışı vermiyorsa, yayın kapalıysa veya erişim yayıncı tarafından engelleniyorsa uygulama akış üretemez. Çözümleyici yalnızca mevcut ve izin verilen medya kaynaklarını bulur.
 
 ## TV arayüzü
 
-- İzleme ekranında D-pad yönleri tüketilir ve kanal değiştirmez.
-- Kanal değişimi yalnızca `KEYCODE_CHANNEL_UP/DOWN` veya numara tuşlarıyla yapılır.
-- OK, Menü ve Rehber kanal panelini açar.
-- Ayarlar ve Mavi tuş sağ ayar panelini açar.
-- Kanal panelindeki Arama ve Ayarlar seçenekleri listenin üzerinde sabittir.
-- Yeşil kanal aramasını, Sarı kanal listesini, Kırmızı yayın yenilemeyi açar.
-- Kanal ve ayar satırlarında sistem odağı, yüksek kontrastlı seçici ve kısa ölçek animasyonu kullanılır.
-- Paneller kayarak açılır; splash logosu, kanal bilgi kartı ve yükleme katmanı kısa geçişlerle görünür.
-- Kanal paneli saat ve mevcut kanal işareti gösterir; ayarlar her ekran yüksekliğinde kaydırılabilir.
-- İlk açılış seçimi, son kanal, otomatik oynatma ve bilgi süresi `SharedPreferences` içinde tutulur.
-- Görüntü oranı tercihi Media3 `FIT`, `ZOOM` ve `FILL` modlarına eşlenir.
-- Ayrı splash etkinliği açılış markasını gösterir; kanal değişiminde yayın hazır olana kadar siyah yükleme katmanı görünür.
+- İzleme ekranında yön tuşları yanlışlıkla kanal değiştirmez.
+- Kanal değişimi `KEYCODE_CHANNEL_UP/DOWN` veya numara tuşlarıyla yapılır.
+- Üst durum şeridi kanal numarası, kanal adı, canlı/yükleniyor durumu ve saati gösterir.
+- Kanal rehberi mevcut kanala odaklanarak açılır ve listeyi ilgili satıra kaydırır.
+- Kanal ve ayar panelleri yarı saydam, yüksek kontrastlı 10-foot tasarıma sahiptir.
+- Kırmızı yayın yenilemeyi, Yeşil aramayı, Sarı kanal rehberini ve Mavi ayarları açar.
+- Yükleme, hata ve numara girişleri ayrı kartlarla görünür; video üzerinde okunabilirlik için ekran gölgesi kullanılır.
+- İlk açılış seçimi, son kanal, otomatik oynatma, bilgi süresi ve görüntü oranı `SharedPreferences` içinde tutulur.
+- Görüntü oranı Media3 `FIT`, `ZOOM` ve `FILL` modlarına eşlenir.
 
-## Dayanıklılık
+## Dayanıklılık ve güvenlik
 
 - Bağlantı ve okuma zaman aşımı vardır.
-- Yalnızca HTTPS katalog ve oynatıcı adresleri kabul edilir.
+- Yalnızca HTTPS katalog, oynatıcı ve medya adresleri kabul edilir.
+- Oynatıcı belgeleri 2 MB ile sınırlandırılır.
+- Çözümleme döngüleri ziyaret edilen URL kümesi ve derinlik sınırıyla engellenir.
 - Son eksiksiz katalog çevrimdışı başlangıcı destekler.
-- Doğrudan çözülen yayın adresleri yalnızca çalışan uygulama oturumunda saklanır; süreli URL'ler kalıcılaştırılmaz.
-- Media3 adaptif kalite ve yönlendirme desteği kullanır.
+- Süreli medya URL'leri yalnızca çalışan uygulama oturumunda saklanır.
 - Media3 hatası bir kez otomatik yeniden denenir; kullanıcı Kırmızı tuşla önbelleği temizleyip tekrar deneyebilir.

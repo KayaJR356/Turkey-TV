@@ -14,6 +14,11 @@ final class Channel {
     }
 
     boolean isDirectStream() {
-        return playbackUrl.contains(".m3u8") || playbackUrl.contains(".mpd");
+        String value = playbackUrl.toLowerCase(java.util.Locale.ROOT);
+        return value.contains(".m3u8")
+                || value.contains(".mpd")
+                || value.contains(".mp4")
+                || value.contains("format=m3u8")
+                || value.contains("format=mpd");
     }
 }

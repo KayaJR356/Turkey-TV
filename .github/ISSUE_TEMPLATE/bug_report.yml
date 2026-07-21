@@ -1,5 +1,5 @@
-name: Hata bildirimi
-description: Tekrar üretilebilir bir sorunu bildirin.
+name: 🐛 Hata bildirimi
+description: Tekrarlanabilir bir uygulama hatasını bildirin.
 title: "[Bug]: "
 labels:
   - bug
@@ -7,44 +7,77 @@ body:
   - type: markdown
     attributes:
       value: |
-        Bildirim için teşekkürler. Güvenlik açıklarını burada paylaşmayın; SECURITY.md politikasını kullanın.
-  - type: checkboxes
-    attributes:
-      label: Ön kontrol
-      options:
-        - label: Mevcut issue'larda aynı sorunu aradım.
-          required: true
-        - label: Güncel sürüm veya `main` dalındaki derlemeyle doğruladım.
-          required: true
+        Eksiksiz bilgiler sorunun daha hızlı doğrulanmasına yardımcı olur. Güvenlik açıkları için bu formu kullanmayın; `SECURITY.md` belgesini izleyin.
   - type: input
-    attributes:
-      label: Cihaz ve işletim sistemi
-      description: TV modeli ve Android / Google TV sürümü.
-      placeholder: Örn. Chromecast with Google TV, Android TV 12
-    validations:
-      required: true
-  - type: input
+    id: version
     attributes:
       label: Uygulama sürümü
       description: Sürüm numarası veya commit SHA.
+      placeholder: "Örn. 3.1.0 veya 905e5b2"
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Android TV
+        - Google TV
+        - Android TV emülatörü
+        - Diğer
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Cihaz ve Android sürümü
+      placeholder: "Örn. Chromecast with Google TV — Android 12"
     validations:
       required: true
   - type: textarea
+    id: description
     attributes:
-      label: Sorunun özeti
-      description: Ne oldu ve ne olmasını bekliyordunuz?
+      label: Sorun
+      description: Ne olduğunu ve etkisini kısa, açık biçimde anlatın.
     validations:
       required: true
   - type: textarea
+    id: steps
     attributes:
-      label: Tekrar üretme adımları
+      label: Tekrarlama adımları
       placeholder: |
         1. Uygulamayı aç
         2. ... kanalını seç
-        3. ...
+        3. ... tuşuna bas
+        4. Hatayı gözlemle
     validations:
       required: true
   - type: textarea
+    id: expected
     attributes:
-      label: Ek bağlam
-      description: Gizli bilgi içermeyen log, ekran görüntüsü veya ek ayrıntı.
+      label: Beklenen davranış
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Gerçekleşen davranış
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Loglar veya ekran görüntüleri
+      description: Kişisel veri, erişim anahtarı veya özel/geçici yayın URL'si paylaşmayın.
+      render: shell
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Kontrol listesi
+      options:
+        - label: Benzer açık ve kapalı issue'ları aradım.
+          required: true
+        - label: Güncel sürümde tekrar denedim.
+          required: true
+        - label: Bu bildirim güvenlik açığı veya yayın hakkı talebi içermiyor.
+          required: true

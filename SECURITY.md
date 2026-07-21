@@ -1,38 +1,46 @@
 # Güvenlik Politikası
 
+Türkiye TV'de güvenliği ciddiye alıyoruz. Sorumlu bildirim, kullanıcıları korumaya ve sorunu kamuya açıklanmadan önce değerlendirmeye yardımcı olur.
+
 ## Desteklenen sürümler
 
-| Sürüm                                | Destek durumu |
-| ------------------------------------ | ------------- |
-| `main` dalındaki güncel sürüm        | ✅            |
-| Eski commit ve doğrulanmamış APK'lar | ❌            |
+| Sürüm | Güvenlik desteği |
+| --- | --- |
+| `main` / mevcut `3.1.x` | ✅ |
+| Daha eski sürümler | ❌ |
 
 ## Güvenlik açığı bildirme
 
-Güvenlik açıklarını public issue, pull request, log veya ekran görüntüsünde paylaşmayın.
+> [!CAUTION]
+> Güvenlik açığı için herkese açık issue, discussion veya pull request açmayın. Erişim anahtarı, kişisel veri, özel yayın adresi ya da çalışan exploit paylaşmayın.
 
-1. [GitHub Private Security Advisory](https://github.com/KayaJR356/Turkey-TV/security/advisories/new) açın.
-2. Etkilenen sürümü veya commit SHA'sını belirtin.
-3. Tekrar üretme adımlarını ve olası etkiyi açıklayın.
-4. Varsa güvenli bir kanıt veya önerilen düzeltme ekleyin.
-5. Hassas yayın anahtarlarını, kişisel verileri veya üçüncü taraf sırlarını paylaşmayın.
+Tercih edilen kanal:
 
-## Yanıt süreci
+1. Repository'nin [özel güvenlik bildirimi](https://github.com/KayaJR356/Turkey-TV/security/advisories/new) sayfasını açın.
+2. Etkilenen sürümü ve ortamı belirtin.
+3. Tekrarlama adımlarını, beklenen etkiyi ve mümkünse güvenli bir kavram kanıtını ekleyin.
+4. Varsa önerilen düzeltmeyi veya azaltma yöntemini paylaşın.
 
-- Bildirim alındığında GitHub üzerinden teyit verilir.
-- Etki ve yeniden üretilebilirlik değerlendirilir.
-- Gerekirse düzeltme ve açıklama koordineli yayımlanır.
+Özel güvenlik bildirimi kullanılamıyorsa alternatif iletişim: **`TODO: Herkese açık olmayan güvenlik e-posta adresi ekleyin.`**
 
-Kesin yanıt süresi **TODO:** proje sahibi tarafından tanımlanacaktır.
+## Bildirimde bulunması gerekenler
 
-## Kapsam
+- Açığın türü ve olası etkisi
+- Etkilenen dosya, bileşen ve sürüm
+- Tekrarlama adımları
+- Cihaz, Android sürümü ve ağ koşulları
+- Varsa CVE/CWE referansı
+- Güvenli biçimde paylaşılabilecek log veya ekran görüntüsü
 
-Özellikle şu alanlardaki bildirimler değerlidir:
+## Süreç
 
-- Güvensiz URL veya yönlendirme işleme
-- Uygulama içinde kod çalıştırmaya yol açan içerik
-- İzin, veri saklama veya gizlilik ihlali
-- Derleme ve yayın zinciri bütünlüğü
-- Güven sınırlarını aşan üçüncü taraf içerik
+- Bakımcı bildirimi doğrular ve kapsamını değerlendirir.
+- Gerekirse ek bilgi talep edilir.
+- Düzeltme ve yayımlama planı belirlenene kadar ayrıntılar gizli tutulur.
+- Uygun olduğunda bildiren kişiye güvenlik duyurusunda teşekkür edilir.
 
-Yayın sağlayıcısının çevrimdışı olması, coğrafi kısıtlama veya yalnızca düşük kalite sunması tek başına güvenlik açığı değildir.
+Yanıt ve düzeltme hedef süreleri: **`TODO: Bakım kapasitesine uygun SLA ekleyin.`**
+
+## Kapsam notları
+
+Üçüncü taraf yayınların kesilmesi, coğrafi engeller, kaynak katalog değişiklikleri veya yayın kalitesi tek başına güvenlik açığı değildir. Uygulamanın kullanıcı cihazı, ağ trafiği, veri saklama veya güncelleme bütünlüğü üzerindeki riskleri güvenlik kapsamındadır.
