@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 🔐 Güvenlik açığı bildirimi
+    url: https://github.com/KayaJR356/Turkey-TV/security/policy
+    about: Hassas güvenlik konularını herkese açık issue olarak paylaşmayın.
+  - name: 💬 Destek rehberi
+    url: https://github.com/KayaJR356/Turkey-TV/blob/main/SUPPORT.md
+    about: Kurulum, kullanım ve destek kapsamını inceleyin.
