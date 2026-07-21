@@ -83,7 +83,7 @@ Türkiye TV; canlı kanal kataloğunu yenileyen, uygun HLS/DASH akışlarını M
 ## 🎬 Demo
 
 - **Video/GIF:** `TODO: Demo bağlantısı veya docs/assets/demo.gif`
-- **Sürüm sayfası:** [GitHub Releases](https://github.com/KayaJR356/Turkey-TV/releases) — `TODO: İlk sürümü yayınla`
+- **Sürüm sayfası:** [v3.2.0](https://github.com/KayaJR356/Turkey-TV/releases/tag/v3.2.0)
 - **CI çıktısı:** Başarılı GitHub Actions çalışmasındaki `TurkiyeTV-debug` artifact'i
 
 <a id="installation"></a>
@@ -117,7 +117,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
 > [!WARNING]
-> Repository içinde sürümsüz APK tutulmaz. Dağıtım için imzalı GitHub Release ve doğrulanabilir checksum yayımlama süreci tamamlanmalıdır.
+> GitHub Release sayfasındaki APK şu an **debug/test build** olarak yayımlanır ve üretim anahtarıyla imzalanmış mağaza sürümü değildir. İndirmeden sonra sağlanan SHA-256 checksum değerini doğrulayın.
 
 Derleme ve lint kontrollerini birlikte çalıştırmak için:
 
@@ -154,6 +154,7 @@ Turkey-TV/
 ├── .github/
 │   ├── ISSUE_TEMPLATE/          # Yapılandırılmış issue formları
 │   ├── workflows/android.yml    # Build, lint ve APK artifact iş akışı
+│   ├── workflows/release.yml    # Sürüm değişince debug prerelease yayımlama
 │   └── PULL_REQUEST_TEMPLATE.md
 ├── app/
 │   ├── build.gradle             # Android uygulama yapılandırması
@@ -193,7 +194,8 @@ Turkey-TV/
 - [x] Kanal arama, ayarlar ve katalog önbelleği
 - [x] CI üzerinde debug build ve Android Lint
 - [ ] `TODO:` Proje banner'ı ve gerçek ekran görüntüleri
-- [ ] `TODO:` İmzalı, sürümlenmiş GitHub Release ve checksum
+- [x] Sürümlenmiş debug GitHub Release ve SHA-256 checksum
+- [ ] `TODO:` Üretim anahtarıyla imzalı kararlı APK dağıtımı
 - [ ] `TODO:` Birim/entegrasyon test kapsamı hedefi
 - [ ] `TODO:` Bakımcı tarafından onaylanmış gelecek özellikler
 
