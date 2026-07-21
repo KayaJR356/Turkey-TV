@@ -405,7 +405,7 @@ public final class MainActivity extends AppCompatActivity {
                     if (!channels.isEmpty()) {
                         Channel readyChannel = channels.get(currentIndex);
                         channelStatuses.put(readyChannel.number, ChannelStatus.NATIVE);
-                        ChannelUserData.recordRecent(this, readyChannel);
+                        ChannelUserData.recordRecent(MainActivity.this, readyChannel);
                         refreshChannelRows();
                         showChannelInfo(readyChannel);
                         prefetchAdjacentStreams(currentIndex);
