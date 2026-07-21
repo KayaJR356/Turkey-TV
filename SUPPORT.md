@@ -1,6 +1,6 @@
 # Destek
 
-Türkiye TV ile ilgili yardım taleplerinin hızlı yönlendirilmesi için aşağıdaki kanalları kullanın.
+Türkiye Canlı TV ile ilgili yardım taleplerinin hızlı yönlendirilmesi için aşağıdaki kanalları kullanın.
 
 ## Doğru kanalı seçin
 
