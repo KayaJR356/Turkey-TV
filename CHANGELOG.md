@@ -60,8 +60,7 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr-TR/1.1.0/) yaklaşımın
 
 ## [3.1.0] - 2026-07-20
 
-> [!NOTE]
-> Bu kayıt `app/build.gradle` içindeki `versionName` ve repository commit geçmişine dayanır. Sürüm etiketi ve yayımlanmış release notları: `TODO`.
+Bu kayıt `app/build.gradle` içindeki `versionName` ve repository commit geçmişine dayanır.
 
 ### Added
 
