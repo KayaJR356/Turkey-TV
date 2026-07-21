@@ -27,7 +27,7 @@ jobs:
           cache-provider: basic
 
       - name: Build and lint
-        run: gradle :app:assembleDebug :app:lint
+        run: gradle :app:testDebugUnitTest :app:assembleDebug :app:lint
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v7

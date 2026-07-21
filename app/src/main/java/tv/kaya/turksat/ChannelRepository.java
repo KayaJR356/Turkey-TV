@@ -1,9 +1,10 @@
 package tv.kaya.turksat;
 
 import android.content.Context;
-import android.text.Html;
 import android.util.Base64;
 
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Element;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -39,9 +40,6 @@ final class ChannelRepository {
     private static final String PLAYER_URL = BASE_URL + "/player/index.php?id=%s&mobile=1";
     private static final String PREFS = "tv_settings";
     private static final String CACHE_KEY = "channel_cache_v3";
-    private static final String UNAVAILABLE_KEY = "unavailable_channels_v1";
-    private static final String UNAVAILABLE_SINCE_KEY = "unavailable_channels_since_v1";
-    private static final long UNAVAILABLE_TTL_MS = 6L * 60L * 60L * 1_000L;
     private static final int MINIMUM_COMPLETE_CATALOG_SIZE = 250;
     private static final int MAX_RESOLVE_DEPTH = 3;
     private static final int MAX_DOCUMENT_CHARS = 1_250_000;
@@ -51,11 +49,8 @@ final class ChannelRepository {
                     + "AppleWebKit/537.36 (KHTML, like Gecko) "
                     + "Chrome/138.0.0.0 Safari/537.36";
 
-    private static final Pattern CHANNEL_BLOCK = Pattern.compile(
-            "<li\\s+class=['\\\"]ft_(\\d+)\\s+tv[^'\\\"]*['\\\"][^>]*>(.*?)</li>",
-            Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
-    private static final Pattern ANCHOR = Pattern.compile(
-            "<a\\s+([^>]+)>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+    private static final Pattern PLAYER_CLASS = Pattern.compile("^ft_(\\d+)$",
+            Pattern.CASE_INSENSITIVE);
     private static final Pattern MEDIA_STREAM_URL = Pattern.compile(
             "https?://[^\\s\\\"'<>\\\\]+?(?:\\.(?:m3u8|mpd|mp4)|/manifest)"
                     + "(?:\\?[^\\s\\\"'<>\\\\]*)?",
@@ -73,7 +68,6 @@ final class ChannelRepository {
             "['\\\"](https?://[^'\\\"<>]+)['\\\"]",
             Pattern.CASE_INSENSITIVE);
     private static final Map<String, String> PREFERRED_STREAMS = createPreferredStreams();
-    private static final Object AVAILABILITY_LOCK = new Object();
 
     private ChannelRepository() {
     }
@@ -83,7 +77,7 @@ final class ChannelRepository {
             List<Channel> online = downloadCatalog();
             if (online.size() >= MINIMUM_COMPLETE_CATALOG_SIZE) {
                 saveCache(context, online);
-                return filterRecentlyUnavailable(context, online);
+                return online;
             }
         } catch (Exception ignored) {
             // The last complete catalogue is a better TV experience than a partial list.
@@ -91,7 +85,7 @@ final class ChannelRepository {
 
         List<Channel> cached = loadCache(context);
         if (cached.size() >= MINIMUM_COMPLETE_CATALOG_SIZE) {
-            return filterRecentlyUnavailable(context, cached);
+            return cached;
         }
         return new ArrayList<>();
     }
@@ -387,96 +381,78 @@ final class ChannelRepository {
         }
     }
 
-    static void markUnavailable(Context context, Channel channel) {
-        synchronized (AVAILABILITY_LOCK) {
-            android.content.SharedPreferences preferences = context.getSharedPreferences(PREFS, 0);
-            Set<String> unavailable = new HashSet<>(preferences.getStringSet(
-                    UNAVAILABLE_KEY, Collections.emptySet()));
-            unavailable.add(normalize(channel.name));
-            long since = preferences.getLong(UNAVAILABLE_SINCE_KEY, 0L);
-            preferences.edit()
-                    .putStringSet(UNAVAILABLE_KEY, unavailable)
-                    .putLong(UNAVAILABLE_SINCE_KEY,
-                            since == 0L ? System.currentTimeMillis() : since)
-                    .apply();
-        }
-    }
-
-    static void markAvailable(Context context, Channel channel) {
-        synchronized (AVAILABILITY_LOCK) {
-            android.content.SharedPreferences preferences = context.getSharedPreferences(PREFS, 0);
-            Set<String> unavailable = new HashSet<>(preferences.getStringSet(
-                    UNAVAILABLE_KEY, Collections.emptySet()));
-            if (unavailable.remove(normalize(channel.name))) {
-                preferences.edit().putStringSet(UNAVAILABLE_KEY, unavailable).apply();
-            }
-        }
-    }
-
-    static void clearUnavailable(Context context) {
-        synchronized (AVAILABILITY_LOCK) {
-            context.getSharedPreferences(PREFS, 0).edit()
-                    .remove(UNAVAILABLE_KEY)
-                    .remove(UNAVAILABLE_SINCE_KEY)
-                    .apply();
-        }
-    }
-
-    private static List<Channel> filterRecentlyUnavailable(Context context, List<Channel> source) {
-        synchronized (AVAILABILITY_LOCK) {
-            android.content.SharedPreferences preferences = context.getSharedPreferences(PREFS, 0);
-            long since = preferences.getLong(UNAVAILABLE_SINCE_KEY, 0L);
-            if (since == 0L || System.currentTimeMillis() - since >= UNAVAILABLE_TTL_MS) {
-                clearUnavailable(context);
-                return source;
-            }
-            Set<String> unavailable = new HashSet<>(preferences.getStringSet(
-                    UNAVAILABLE_KEY, Collections.emptySet()));
-            if (unavailable.isEmpty()) {
-                return source;
-            }
-            ArrayList<Channel> filtered = new ArrayList<>();
-            for (Channel channel : source) {
-                if (!unavailable.contains(normalize(channel.name))) {
-                    filtered.add(channel);
-                }
-            }
-            return filtered;
-        }
-    }
-
     private static List<Channel> downloadCatalog() throws Exception {
-        String html = downloadText(CATALOG_URL);
+        return parseCatalogHtml(downloadText(CATALOG_URL));
+    }
+
+    static List<Channel> parseCatalogHtml(String html) {
         ArrayList<Channel> channels = new ArrayList<>();
-        Matcher blockMatcher = CHANNEL_BLOCK.matcher(html);
+        HashSet<String> seenPlayers = new HashSet<>();
+        if (html == null || html.isEmpty()) {
+            return channels;
+        }
 
-        while (blockMatcher.find()) {
-            String playerId = blockMatcher.group(1);
-            Matcher anchorMatcher = ANCHOR.matcher(blockMatcher.group(2));
-            while (anchorMatcher.find()) {
-                String attributes = anchorMatcher.group(1);
-                String title = attribute(attributes, "title");
-                if (title == null || !title.toLowerCase(Locale.forLanguageTag("tr-TR"))
-                        .endsWith(" canlı izle")) {
-                    continue;
-                }
-
-                String href = attribute(attributes, "href");
-                if (href == null || href.isEmpty()) {
+        for (Element row : Jsoup.parse(html, CATALOG_URL).select("li.tv")) {
+            String playerId = null;
+            for (String className : row.classNames()) {
+                Matcher matcher = PLAYER_CLASS.matcher(className);
+                if (matcher.matches()) {
+                    playerId = matcher.group(1);
                     break;
                 }
-
-                String name = decodeHtml(title.substring(0, title.length() - " canlı izle".length()).trim());
-                String pageUrl = absoluteUrl(href);
-                String preferredStream = PREFERRED_STREAMS.get(normalize(name));
-                String playbackUrl = preferredStream != null
-                        ? preferredStream
-                        : String.format(Locale.ROOT, PLAYER_URL, playerId);
-                channels.add(new Channel(channels.size() + 1, name, playbackUrl, pageUrl));
-                break;
             }
+            if (playerId == null || seenPlayers.contains(playerId)) {
+                continue;
+            }
+
+            Element link = row.selectFirst("a[href]");
+            if (link == null) {
+                continue;
+            }
+            String pageUrl = trustedCatalogUrl(link.attr("href"));
+            if (pageUrl == null) {
+                continue;
+            }
+
+            String title = link.attr("title").trim();
+            String suffix = " canlı izle";
+            String name = title;
+            if (title.toLowerCase(Locale.forLanguageTag("tr-TR")).endsWith(suffix)) {
+                name = title.substring(0, title.length() - suffix.length()).trim();
+            }
+            if (name.isEmpty()) {
+                name = link.text().trim();
+            }
+            if (name.isEmpty()) {
+                Element image = link.selectFirst("img[alt]");
+                name = image == null ? "" : image.attr("alt").trim();
+            }
+            if (name.isEmpty()) {
+                continue;
+            }
+
+            seenPlayers.add(playerId);
+            String preferredStream = PREFERRED_STREAMS.get(normalize(name));
+            String playbackUrl = preferredStream != null
+                    ? preferredStream
+                    : String.format(Locale.ROOT, PLAYER_URL, playerId);
+            channels.add(new Channel(channels.size() + 1, name, playbackUrl, pageUrl));
         }
         return channels;
+    }
+
+    private static String trustedCatalogUrl(String href) {
+        try {
+            URL url = new URL(new URL(CATALOG_URL), href);
+            String host = url.getHost().toLowerCase(Locale.ROOT);
+            if (!"https".equalsIgnoreCase(url.getProtocol())
+                    || !("canlitv.diy".equals(host) || "www.canlitv.diy".equals(host))) {
+                return null;
+            }
+            return url.toString();
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     private static String downloadText(String source) throws Exception {
@@ -512,25 +488,6 @@ final class ChannelRepository {
         } finally {
             connection.disconnect();
         }
-    }
-
-    private static String attribute(String attributes, String name) {
-        Pattern pattern = Pattern.compile(
-                "(?:^|\\s)" + Pattern.quote(name) + "\\s*=\\s*(['\\\"])(.*?)\\1",
-                Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
-        Matcher matcher = pattern.matcher(attributes);
-        return matcher.find() ? matcher.group(2) : null;
-    }
-
-    private static String decodeHtml(String value) {
-        return Html.fromHtml(value).toString().trim();
-    }
-
-    private static String absoluteUrl(String href) {
-        if (href.startsWith("https://")) {
-            return href;
-        }
-        return BASE_URL + (href.startsWith("/") ? href : "/" + href);
     }
 
     private static String normalize(String value) {

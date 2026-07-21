@@ -7,6 +7,7 @@ import android.graphics.Typeface;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
@@ -19,6 +20,8 @@ import androidx.media3.common.util.UnstableApi;
 @UnstableApi
 public final class SplashActivity extends Activity {
     private static final long SPLASH_DURATION_MS = 1100L;
+    private static final float COMPACT_LAYOUT_SCALE = 0.82f;
+    private static final float COMPACT_TEXT_SCALE = 0.86f;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Runnable openPlayer = () -> {
         if (isFinishing() || isDestroyed()) {
@@ -92,13 +95,14 @@ public final class SplashActivity extends Activity {
         TextView view = new TextView(this);
         view.setText(value);
         view.setTextColor(Color.WHITE);
-        view.setTextSize(sizeSp);
+        view.setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp * COMPACT_TEXT_SCALE);
         view.setGravity(Gravity.CENTER);
         return view;
     }
 
     private int dp(int value) {
-        return Math.round(value * getResources().getDisplayMetrics().density);
+        return Math.round(value * getResources().getDisplayMetrics().density
+                * COMPACT_LAYOUT_SCALE);
     }
 
     @Override

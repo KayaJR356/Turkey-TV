@@ -24,6 +24,7 @@ android {
         updateRelease {
             if (updateKeystoreFile) {
                 storeFile file(updateKeystoreFile)
+                storeType 'pkcs12'
                 storePassword System.getenv('UPDATE_KEYSTORE_PASSWORD')
                 keyAlias System.getenv('UPDATE_KEY_ALIAS')
                 keyPassword System.getenv('UPDATE_KEY_PASSWORD')
@@ -50,6 +51,7 @@ dependencies {
     implementation 'androidx.media3:media3-exoplayer-hls:1.5.1'
     implementation 'androidx.media3:media3-exoplayer-dash:1.5.1'
     implementation 'androidx.media3:media3-ui:1.5.1'
+    implementation 'org.jsoup:jsoup:1.22.2'
 
     testImplementation 'junit:junit:4.13.2'
 }

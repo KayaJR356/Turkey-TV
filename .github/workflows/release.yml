@@ -71,7 +71,7 @@ jobs:
             echo "Update signing secrets are missing. See docs/RELEASING.md." >&2
             exit 1
           fi
-          KEYSTORE="$RUNNER_TEMP/turkiye-tv-update.jks"
+          KEYSTORE="$RUNNER_TEMP/turkiye-tv-update.p12"
           printf '%s' "$UPDATE_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE"
           echo "UPDATE_KEYSTORE_FILE=$KEYSTORE" >> "$GITHUB_ENV"
           echo "UPDATE_KEYSTORE_PASSWORD=$UPDATE_KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
@@ -80,7 +80,7 @@ jobs:
 
       - name: Build and lint
         if: steps.version.outputs.exists == 'false'
-        run: gradle :app:assembleRelease :app:lint --no-daemon
+        run: gradle :app:testDebugUnitTest :app:assembleRelease :app:lint --no-daemon
 
       - name: Package APK and checksum
         if: steps.version.outputs.exists == 'false'
@@ -98,10 +98,19 @@ jobs:
           printf '%s\n' \
             '## Türkiye Canlı TV ${{ steps.version.outputs.version }}' \
             '' \
-            'Bu sürüm kanal geçişini, alternatif yayın çözümlemeyi, menü sürekliliğini ve Android TV açılış deneyimini geliştirir.' \
+            'Bu sürüm tam kaynak kataloğunu, yerel + web yayın fallback sistemini, kompakt TV arayüzünü, güvenilir cihaz açılışını ve GitHub tabanlı otomatik güncellemeyi getirir.' \
+            '' \
+            '### Öne çıkanlar' \
+            '- Kaynak katalogdaki tüm kanallar listede tutulur' \
+            '- HLS/DASH/MP4 bulunamazsa güvenli uygulama içi web oynatıcı açılır' \
+            '- Web oynatıcıda Program + / - ile kanal değiştirilebilir' \
+            '- Arayüz 720p, 1080p ve 4K TV görünüm alanları için daha kompaktır' \
+            '- Cihaz açılışında üretici TV uygulamasından sonra gecikmeli ikinci başlatma denenir' \
+            '- Bağlantı geri geldiğinde seçili yayın otomatik yenilenir' \
             '' \
             '### Doğrulama' \
-            '- GitHub Actions üzerinde Android debug build başarılı' \
+            '- Katalog ve sürüm birim testleri başarılı' \
+            '- GitHub Actions üzerinde Android release build başarılı' \
             '- Android Lint başarılı' \
             '- APK ile birlikte SHA-256 checksum yayımlandı' \
             '' \

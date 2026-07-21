@@ -21,12 +21,25 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr-TR/1.1.0/) yaklaşımın
 - Android TV Ayarlar panelinden elle güncelleme denetimi
 - Bütün katalog için arka planda yayın sağlık taraması
 - Kalıcı repository secret anahtarıyla imzalı Release APK üretme iş akışı
+- Yerel medya bulunamadığında kaynak sitenin oynatıcısını açan güvenli uygulama içi web fallback
+- Kaynak oynatıcı yanıt vermezse aynı kanalın katalog sayfasına otomatik ikinci web fallback
+- Katalog HTML değişikliklerini kapsayan jsoup ayrıştırıcı ve birim testleri
+- Bağlantı geri geldiğinde geçerli yayını otomatik yeniden deneme
 
 ### Changed
 
 - HLS, DASH ve MP4 kaynakları oynatılmadan önce gerçek ağ yanıtıyla doğrulanıyor
-- Çalışmayan kanal listeden çıkarılıp otomatik olarak sonraki doğrulanabilir kanala geçiliyor
-- Başarısız kanallar altı saat gizleniyor; elle katalog yenileme yeniden sınamayı zorluyor
+- Kaynak katalogdaki kanallar sağlık sonucu ne olursa olsun listede tutuluyor
+- Kanal sınıf sırası, bağlantı başlığı veya görünür ad biçimi değişse de katalog dayanıklı ayrıştırılıyor
+- TV arayüzü, kanal satırları ve açılış ekranı daha kompakt ve ekran boyutuna uyarlanabilir hâle getirildi
+- Cihaz açılışında başlatma, üretici TV uygulamasının öne geçmesine karşı gecikmeli ikinci deneme yapıyor
+- Web oynatıcıda `Program + / -` ile sonraki veya önceki kanala geçilebiliyor
+
+### Fixed
+
+- Sağlık taraması başarısız olan kanalların katalogdan eksilmesi
+- YouTube, dış iframe veya tarayıcı gerektiren kanalların hiç açılamaması
+- Bazı TV yazılımlarında cihaz açılışı seçeneğinin varsayılan TV uygulamasının arkasında kalması
 
 ### Security
 
