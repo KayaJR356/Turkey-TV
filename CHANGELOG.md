@@ -15,7 +15,7 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr-TR/1.1.0/) yaklaşımın
 ## [3.2.0] - 2026-07-21
 
 > [!NOTE]
-> Bu kayıt `app/build.gradle` içindeki `versionName` değerini temsil eder. GitHub Release etiketi: `TODO`.
+> GitHub Release etiketi: [`v3.2.0`](https://github.com/KayaJR356/Turkey-TV/releases/tag/v3.2.0). Yayımlanan APK debug/test build'dir; üretim anahtarıyla imzalanmış mağaza sürümü değildir.
 
 ### Added
 
@@ -69,3 +69,6 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr-TR/1.1.0/) yaklaşımın
 - `PATCH`: Geriye uyumlu hata ve güvenlik düzeltmeleri
 
 Yeni bir release yayımlanırken tarih, karşılaştırma bağlantıları ve migration notları bu dosyaya eklenmelidir.
+
+[Unreleased]: https://github.com/KayaJR356/Turkey-TV/compare/v3.2.0...HEAD
+[3.2.0]: https://github.com/KayaJR356/Turkey-TV/releases/tag/v3.2.0
