@@ -95,33 +95,32 @@ jobs:
       - name: Prepare release notes
         if: steps.version.outputs.exists == 'false'
         run: |
-          printf '%s\n' \
-            '## Türkiye Canlı TV ${{ steps.version.outputs.version }}' \
-            '' \
-            'Bu sürüm tam kaynak kataloğunu, yerel + web yayın fallback sistemini, kompakt TV arayüzünü, güvenilir cihaz açılışını ve GitHub tabanlı otomatik güncellemeyi getirir.' \
-            '' \
-            '### Öne çıkanlar' \
-            '- Kaynak katalogdaki tüm kanallar listede tutulur' \
-            '- HLS/DASH/MP4 bulunamazsa güvenli uygulama içi web oynatıcı açılır' \
-            '- Web oynatıcıda Program + / - ile kanal değiştirilebilir' \
-            '- Arayüz 720p, 1080p ve 4K TV görünüm alanları için daha kompaktır' \
-            '- Cihaz açılışında üretici TV uygulamasından sonra gecikmeli ikinci başlatma denenir' \
-            '- Bağlantı geri geldiğinde seçili yayın otomatik yenilenir' \
-            '' \
-            '### Doğrulama' \
-            '- Katalog ve sürüm birim testleri başarılı' \
-            '- GitHub Actions üzerinde Android release build başarılı' \
-            '- Android Lint başarılı' \
-            '- APK ile birlikte SHA-256 checksum yayımlandı' \
-            '' \
-            '### Uygulama içi güncelleme' \
-            '- Uygulama bu sürümü açılışta otomatik algılar' \
-            '- APK SHA-256 değeri kurulmadan önce doğrulanır' \
-            '- Android güvenliği gereği son kurulum onayı cihazda verilir' \
-            '' \
-            '> [!NOTE]' \
-            '> Üçüncü taraf yayınların erişilebilirliği yayıncıya, bölgeye ve zamana göre değişebilir.' \
-            > dist/RELEASE_NOTES.md
+          VERSION='${{ steps.version.outputs.version }}'
+          awk -v version="$VERSION" '
+            $0 ~ ("^## \\[" version "\\] - ") { capture=1; next }
+            capture && /^## \[/ { exit }
+            capture { print }
+          ' CHANGELOG.md > dist/CHANGELOG_SECTION.md
+
+          if [[ ! -s dist/CHANGELOG_SECTION.md ]]; then
+            echo "CHANGELOG.md does not contain a release section for $VERSION" >&2
+            exit 1
+          fi
+
+          {
+            echo "## Türkiye Canlı TV $VERSION"
+            cat dist/CHANGELOG_SECTION.md
+            printf '%s\n' \
+              '' \
+              '### Doğrulama ve güncelleme' \
+              '- Birim testleri, Android release build ve Lint GitHub Actions üzerinde çalıştırıldı' \
+              '- İmzalı APK ile SHA-256 checksum birlikte yayımlandı' \
+              '- Uygulama bu sürümü açılışta otomatik algılar ve özeti kurulumdan önce doğrular' \
+              '- Android güvenliği gereği son kurulum onayı cihazda verilir' \
+              '' \
+              '> [!NOTE]' \
+              '> Üçüncü taraf yayınların erişilebilirliği yayıncıya, bölgeye ve zamana göre değişebilir; uygulama başarısız kanalları katalogdan silmez.'
+          } > dist/RELEASE_NOTES.md
 
       - name: Publish GitHub release
         if: steps.version.outputs.exists == 'false'

@@ -1,19 +1,24 @@
 package tv.kaya.turksat;
 
 import android.app.AlertDialog;
+import android.app.PictureInPictureParams;
 import android.content.Context;
-import android.graphics.Color;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.content.res.Configuration;
+import android.graphics.Color;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.NetworkRequest;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.InputType;
 import android.util.TypedValue;
+import android.util.Rational;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
@@ -22,6 +27,7 @@ import android.view.WindowManager;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
@@ -29,16 +35,28 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.media3.common.C;
+import androidx.media3.common.Format;
 import androidx.media3.common.MediaItem;
+import androidx.media3.common.MediaMetadata;
 import androidx.media3.common.MimeTypes;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
+import androidx.media3.common.TrackSelectionParameters;
+import androidx.media3.common.Tracks;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.datasource.DefaultHttpDataSource;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 import androidx.media3.ui.AspectRatioFrameLayout;
 import androidx.media3.ui.PlayerView;
+import androidx.media3.session.MediaSession;
+
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -58,6 +76,8 @@ public final class MainActivity extends AppCompatActivity {
     private static final float COMPACT_LAYOUT_SCALE = 0.82f;
     private static final float COMPACT_TEXT_SCALE = 0.88f;
     private static final int WEB_PLAYER_REQUEST = 3402;
+    private static final int EXPORT_SETTINGS_REQUEST = 3403;
+    private static final int IMPORT_SETTINGS_REQUEST = 3404;
     private static final String PREFS = "tv_settings";
     private static final String LAST_CHANNEL_KEY = "last_channel";
     private static final String ONBOARDING_KEY = "onboarding_complete";
@@ -66,6 +86,14 @@ public final class MainActivity extends AppCompatActivity {
     private static final String AUTO_LAUNCH_KEY = "auto_launch_on_boot";
     private static final String INFO_SECONDS_KEY = "info_seconds";
     private static final String ASPECT_MODE_KEY = "aspect_mode";
+    private static final String QUALITY_MODE_KEY = "quality_mode";
+    private static final String AUDIO_LANGUAGE_KEY = "audio_language";
+    private static final String SUBTITLE_LANGUAGE_KEY = "subtitle_language";
+    private static final String PIP_ENABLED_KEY = "pip_enabled";
+    private static final String[] CATEGORIES = {
+            "Tümü", "Favoriler", "Son İzlenen", "Ulusal", "Haber",
+            "Spor", "Çocuk", "Belgesel", "Müzik", "Dini", "Yerel"
+    };
     private static final long TOP_STATUS_VISIBLE_MS = 2_500L;
     private static final String SITE_ORIGIN = "https://www.canlitv.diy";
     private static final String PLAYER_USER_AGENT =
@@ -79,13 +107,16 @@ public final class MainActivity extends AppCompatActivity {
     private final List<TextView> settingsRows = new ArrayList<>();
     private final Map<Integer, String> resolvedStreams = new HashMap<>();
     private final Map<Integer, Set<String>> failedStreams = new HashMap<>();
+    private final Map<Integer, ChannelStatus> channelStatuses = new HashMap<>();
     private final Set<Integer> resolvingChannels = Collections.synchronizedSet(new HashSet<>());
+    private final Set<String> unlockedChannels = new HashSet<>();
     private final ExecutorService resolverExecutor = Executors.newFixedThreadPool(3);
     private final ExecutorService healthExecutor = Executors.newFixedThreadPool(4);
 
     private FrameLayout root;
     private PlayerView playerView;
     private ExoPlayer player;
+    private MediaSession mediaSession;
     private FrameLayout loadingOverlay;
     private LinearLayout topStatusBar;
     private LinearLayout channelPanel;
@@ -93,6 +124,7 @@ public final class MainActivity extends AppCompatActivity {
     private LinearLayout settingsList;
     private ScrollView channelScroll;
     private LinearLayout channelList;
+    private LinearLayout categoryTabs;
     private TextView channelCount;
     private TextView channelInfo;
     private TextView numberEntry;
@@ -102,14 +134,24 @@ public final class MainActivity extends AppCompatActivity {
     private TextView panelClockView;
     private TextView nowPlayingNumber;
     private TextView nowPlayingTitle;
+    private TextView nowPlayingProgram;
     private TextView liveBadge;
     private TextView channelSearchButton;
     private TextView channelSettingsButton;
+    private TextView channelFavoriteButton;
+    private TextView channelGuideButton;
     private TextView startupSetting;
     private TextView autoplaySetting;
     private TextView autoLaunchSetting;
     private TextView infoSetting;
     private TextView aspectSetting;
+    private TextView qualitySetting;
+    private TextView audioSetting;
+    private TextView subtitleSetting;
+    private TextView pipSetting;
+    private TextView favoriteSetting;
+    private TextView lockSetting;
+    private TextView epgSetting;
     private AlertDialog searchDialog;
     private AppUpdateManager appUpdateManager;
     private ConnectivityManager connectivityManager;
@@ -126,6 +168,8 @@ public final class MainActivity extends AppCompatActivity {
     private volatile boolean networkUnavailable;
     private String searchQuery = "";
     private String activeStreamUrl;
+    private String selectedCategory = "Tümü";
+    private EpgRepository.GuideData epgGuide;
 
     private final Runnable tuneEnteredNumber = () -> {
         if (numberBuffer.length() == 0) {
@@ -164,6 +208,10 @@ public final class MainActivity extends AppCompatActivity {
             }
             if (panelClockView != null) {
                 panelClockView.setText(time);
+            }
+            if (!channels.isEmpty()) {
+                updateNowPlaying(channels.get(currentIndex));
+                refreshChannelRows();
             }
             uiHandler.postDelayed(this, 30_000L);
         }
@@ -268,11 +316,17 @@ public final class MainActivity extends AppCompatActivity {
         nowPlayingNumber.setPadding(0, 0, 0, dp(1));
         channelIdentity.addView(nowPlayingNumber);
 
-        nowPlayingTitle = text("Türkiye Canlı TV", 24);
+        nowPlayingTitle = text("Türkiye Canlı TV", 21);
         nowPlayingTitle.setTypeface(nowPlayingTitle.getTypeface(), android.graphics.Typeface.BOLD);
         nowPlayingTitle.setSingleLine(true);
         nowPlayingTitle.setPadding(0, 0, 0, 0);
         channelIdentity.addView(nowPlayingTitle);
+
+        nowPlayingProgram = text("Program rehberi hazırlanıyor", 12);
+        nowPlayingProgram.setTextColor(0xffb8c4d3);
+        nowPlayingProgram.setSingleLine(true);
+        nowPlayingProgram.setPadding(0, dp(1), 0, 0);
+        channelIdentity.addView(nowPlayingProgram);
         topStatusBar.addView(channelIdentity, identityParams);
 
         liveBadge = text("HAZIRLANIYOR", 12);
@@ -293,32 +347,33 @@ public final class MainActivity extends AppCompatActivity {
 
     private void buildLoadingOverlay() {
         loadingOverlay = new FrameLayout(this);
-        loadingOverlay.setBackgroundColor(0xd9000000);
+        loadingOverlay.setBackgroundColor(0x33000000);
         loadingOverlay.setFocusable(false);
 
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         content.setGravity(Gravity.CENTER);
-        content.setPadding(dp(42), dp(34), dp(42), dp(34));
+        content.setPadding(dp(28), dp(20), dp(28), dp(20));
         content.setBackgroundResource(R.drawable.loading_card_background);
 
         loadingSpinner = new ProgressBar(this);
         loadingSpinner.getIndeterminateDrawable().setTint(0xffe30a17);
-        LinearLayout.LayoutParams spinnerParams = new LinearLayout.LayoutParams(dp(58), dp(58));
+        LinearLayout.LayoutParams spinnerParams = new LinearLayout.LayoutParams(dp(38), dp(38));
         spinnerParams.gravity = Gravity.CENTER_HORIZONTAL;
         spinnerParams.setMargins(0, 0, 0, dp(16));
         content.addView(loadingSpinner, spinnerParams);
 
-        loadingMessage = text("Kanallar hazırlanıyor…", 24);
+        loadingMessage = text("Kanallar hazırlanıyor…", 18);
         loadingMessage.setGravity(Gravity.CENTER);
         loadingMessage.setPadding(0, dp(4), 0, 0);
-        content.addView(loadingMessage, new LinearLayout.LayoutParams(dp(520),
+        content.addView(loadingMessage, new LinearLayout.LayoutParams(dp(420),
                 ViewGroup.LayoutParams.WRAP_CONTENT));
 
         FrameLayout.LayoutParams loadingParams = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
-                Gravity.CENTER);
+                Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        loadingParams.setMargins(0, 0, 0, dp(40));
         loadingOverlay.addView(content, loadingParams);
     }
 
@@ -333,7 +388,9 @@ public final class MainActivity extends AppCompatActivity {
         player = new ExoPlayer.Builder(this)
                 .setMediaSourceFactory(new DefaultMediaSourceFactory(dataSourceFactory))
                 .build();
+        mediaSession = new MediaSession.Builder(this, player).build();
         playerView.setPlayer(player);
+        applyTrackPreferences();
         player.addListener(new Player.Listener() {
             @Override
             public void onPlaybackStateChanged(int playbackState) {
@@ -346,7 +403,11 @@ public final class MainActivity extends AppCompatActivity {
                     showLoading(null);
                     scheduleTopStatusBarHide();
                     if (!channels.isEmpty()) {
-                        showChannelInfo(channels.get(currentIndex));
+                        Channel readyChannel = channels.get(currentIndex);
+                        channelStatuses.put(readyChannel.number, ChannelStatus.NATIVE);
+                        ChannelUserData.recordRecent(this, readyChannel);
+                        refreshChannelRows();
+                        showChannelInfo(readyChannel);
                         prefetchAdjacentStreams(currentIndex);
                     }
                     root.requestFocus();
@@ -359,6 +420,11 @@ public final class MainActivity extends AppCompatActivity {
             @Override
             public void onPlayerError(PlaybackException error) {
                 retryAfterPlayerError();
+            }
+
+            @Override
+            public void onTracksChanged(Tracks tracks) {
+                refreshSettingLabels();
             }
         });
     }
@@ -399,10 +465,28 @@ public final class MainActivity extends AppCompatActivity {
         countParams.setMargins(0, 0, 0, dp(14));
         channelPanel.addView(channelCount, countParams);
 
-        channelSearchButton = addChannelAction("⌕  Kanal ara                         YEŞİL", this::showSearchDialog);
-        channelSettingsButton = addChannelAction("⚙  Oynatıcı ayarları                 MAVİ", () -> showSettingsPanel(true));
-        channelSearchButton.setNextFocusDownId(channelSettingsButton.getId());
-        channelSettingsButton.setNextFocusUpId(channelSearchButton.getId());
+        HorizontalScrollView categoryScroll = new HorizontalScrollView(this);
+        categoryScroll.setHorizontalScrollBarEnabled(false);
+        categoryScroll.setFillViewport(false);
+        categoryTabs = new LinearLayout(this);
+        categoryTabs.setOrientation(LinearLayout.HORIZONTAL);
+        categoryScroll.addView(categoryTabs, new HorizontalScrollView.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        channelPanel.addView(categoryScroll, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(48)));
+        rebuildCategoryTabs();
+
+        channelSearchButton = addChannelAction("⌕  Kanal ara  ·  YEŞİL", this::showSearchDialog);
+        channelFavoriteButton = addChannelAction("★  Geçerli kanalı favorile", this::toggleCurrentFavorite);
+        channelGuideButton = addChannelAction("▦  Geçerli kanal program akışı",
+                this::showCurrentProgramGuide);
+        channelSettingsButton = addChannelAction("⚙  Ayarlar  ·  MAVİ", () -> showSettingsPanel(true));
+        channelSearchButton.setNextFocusDownId(channelFavoriteButton.getId());
+        channelFavoriteButton.setNextFocusUpId(channelSearchButton.getId());
+        channelFavoriteButton.setNextFocusDownId(channelGuideButton.getId());
+        channelGuideButton.setNextFocusUpId(channelFavoriteButton.getId());
+        channelGuideButton.setNextFocusDownId(channelSettingsButton.getId());
+        channelSettingsButton.setNextFocusUpId(channelGuideButton.getId());
 
         channelScroll = new ScrollView(this);
         channelScroll.setFillViewport(true);
@@ -419,14 +503,14 @@ public final class MainActivity extends AppCompatActivity {
         scrollParams.setMargins(0, dp(4), 0, 0);
         channelPanel.addView(channelScroll, scrollParams);
 
-        TextView help = text("OK Seç  ·  SAĞ Kapat  ·  0–9 Kanal", 14);
+        TextView help = text("OK Seç  ·  OK basılı Favori  ·  SAĞ Kapat", 12);
         help.setTextColor(0xffaab7c9);
         channelPanel.addView(help, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
     }
 
     private TextView addChannelAction(String label, Runnable action) {
-        TextView row = text(label, 18);
+        TextView row = text(label, 16);
         row.setId(View.generateViewId());
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setFocusable(true);
@@ -434,10 +518,37 @@ public final class MainActivity extends AppCompatActivity {
         row.setOnFocusChangeListener(this::styleFocusedRow);
         row.setOnClickListener(view -> action.run());
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(56));
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(48));
         params.setMargins(0, 0, dp(4), dp(5));
         channelPanel.addView(row, params);
         return row;
+    }
+
+    private void rebuildCategoryTabs() {
+        if (categoryTabs == null) {
+            return;
+        }
+        categoryTabs.removeAllViews();
+        for (String category : CATEGORIES) {
+            TextView tab = text(category, 14);
+            tab.setGravity(Gravity.CENTER);
+            tab.setFocusable(true);
+            tab.setTag(category);
+            tab.setSingleLine(true);
+            tab.setBackgroundResource(R.drawable.channel_row_background);
+            tab.setTextColor(category.equals(selectedCategory) ? 0xffff6973 : Color.WHITE);
+            tab.setOnFocusChangeListener(this::styleFocusedRow);
+            tab.setOnClickListener(view -> {
+                selectedCategory = category;
+                searchQuery = "";
+                rebuildCategoryTabs();
+                rebuildChannelList();
+            });
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, dp(42));
+            params.setMargins(0, 0, dp(5), dp(4));
+            categoryTabs.addView(tab, params);
+        }
     }
 
     private void buildSettingsPanel() {
@@ -467,6 +578,23 @@ public final class MainActivity extends AppCompatActivity {
         settingsPanel.addView(settingsScroll, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
+        addSettingSection("OYNATMA");
+        qualitySetting = addSettingRow(this::cycleQualityMode);
+        audioSetting = addSettingRow(this::showAudioLanguageDialog);
+        subtitleSetting = addSettingRow(this::showSubtitleLanguageDialog);
+        aspectSetting = addSettingRow(() -> {
+            String current = getSharedPreferences(PREFS, 0).getString(ASPECT_MODE_KEY, "fit");
+            String next = "fit".equals(current) ? "zoom" : "zoom".equals(current) ? "fill" : "fit";
+            getSharedPreferences(PREFS, 0).edit().putString(ASPECT_MODE_KEY, next).apply();
+            applyAspectMode();
+            refreshSettingLabels();
+        });
+        addSettingRow(() -> {
+            showSettingsPanel(false);
+            retryCurrentChannel();
+        }).setText("Geçerli yayını yeniden başlat");
+
+        addSettingSection("TV DENEYİMİ");
         startupSetting = addSettingRow(() -> {
             String current = getSharedPreferences(PREFS, 0).getString(STARTUP_MODE_KEY, "last");
             String next = "last".equals(current) ? "first" : "first".equals(current) ? "menu" : "last";
@@ -494,17 +622,22 @@ public final class MainActivity extends AppCompatActivity {
             getSharedPreferences(PREFS, 0).edit().putInt(INFO_SECONDS_KEY, next).apply();
             refreshSettingLabels();
         });
-        aspectSetting = addSettingRow(() -> {
-            String current = getSharedPreferences(PREFS, 0).getString(ASPECT_MODE_KEY, "fit");
-            String next = "fit".equals(current) ? "zoom" : "zoom".equals(current) ? "fill" : "fit";
-            getSharedPreferences(PREFS, 0).edit().putString(ASPECT_MODE_KEY, next).apply();
-            applyAspectMode();
+        pipSetting = addSettingRow(() -> {
+            boolean enabled = getSharedPreferences(PREFS, 0)
+                    .getBoolean(PIP_ENABLED_KEY, true);
+            getSharedPreferences(PREFS, 0).edit().putBoolean(PIP_ENABLED_KEY, !enabled).apply();
             refreshSettingLabels();
         });
-        addSettingRow(() -> {
-            showSettingsPanel(false);
-            retryCurrentChannel();
-        }).setText("Geçerli yayını yeniden başlat");
+
+        addSettingSection("KÜTÜPHANE VE GÜVENLİK");
+        favoriteSetting = addSettingRow(this::toggleCurrentFavorite);
+        lockSetting = addSettingRow(this::requestToggleCurrentLock);
+        addSettingRow(this::requestPinChange).setText("Ebeveyn PIN'ini ayarla / değiştir");
+        addSettingRow(this::exportSettings).setText("Ayarları ve favorileri yedekle");
+        addSettingRow(this::importSettings).setText("Ayar yedeğini geri yükle");
+
+        addSettingSection("VERİ VE SİSTEM");
+        epgSetting = addSettingRow(() -> refreshEpg(true));
         addSettingRow(() -> {
             showSettingsPanel(false);
             loadChannels();
@@ -542,6 +675,16 @@ public final class MainActivity extends AppCompatActivity {
         return row;
     }
 
+    private void addSettingSection(String label) {
+        TextView header = text(label, 12);
+        header.setTextColor(0xffff6973);
+        header.setTypeface(header.getTypeface(), android.graphics.Typeface.BOLD);
+        header.setFocusable(false);
+        header.setPadding(dp(8), dp(14), dp(8), dp(6));
+        settingsList.addView(header, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+    }
+
     private void refreshSettingLabels() {
         String mode = getSharedPreferences(PREFS, 0).getString(STARTUP_MODE_KEY, "last");
         String modeLabel = "first".equals(mode) ? "1. kanal" : "menu".equals(mode)
@@ -559,6 +702,31 @@ public final class MainActivity extends AppCompatActivity {
         String aspectLabel = "zoom".equals(aspect) ? "Yakınlaştır" : "fill".equals(aspect)
                 ? "Doldur" : "Orijinal";
         aspectSetting.setText("Görüntü oranı  ·  " + aspectLabel);
+        String quality = getSharedPreferences(PREFS, 0).getString(QUALITY_MODE_KEY, "auto");
+        String qualityLabel = "low".equals(quality) ? "Düşük · 480p" : "medium".equals(quality)
+                ? "Orta · 720p" : "high".equals(quality) ? "Yüksek · 1080p" : "Otomatik";
+        qualitySetting.setText("Yayın kalitesi  ·  " + qualityLabel);
+        String audio = getSharedPreferences(PREFS, 0).getString(AUDIO_LANGUAGE_KEY, "auto");
+        audioSetting.setText("Ses dili  ·  " + languageLabel(audio, "Otomatik"));
+        String subtitle = getSharedPreferences(PREFS, 0)
+                .getString(SUBTITLE_LANGUAGE_KEY, "off");
+        subtitleSetting.setText("Altyazı  ·  " + ("off".equals(subtitle)
+                ? "Kapalı" : languageLabel(subtitle, "Otomatik")));
+        pipSetting.setText("Görüntü içinde görüntü  ·  "
+                + (getSharedPreferences(PREFS, 0).getBoolean(PIP_ENABLED_KEY, true)
+                ? "Açık" : "Kapalı"));
+        if (!channels.isEmpty()) {
+            Channel channel = channels.get(currentIndex);
+            favoriteSetting.setText((ChannelUserData.isFavorite(this, channel) ? "★" : "☆")
+                    + "  Geçerli kanal favorisi");
+            lockSetting.setText((ChannelUserData.isLocked(this, channel) ? "🔒" : "🔓")
+                    + "  Geçerli kanal kilidi");
+        } else {
+            favoriteSetting.setText("☆  Geçerli kanal favorisi");
+            lockSetting.setText("🔓  Geçerli kanal kilidi");
+        }
+        epgSetting.setText("Program rehberini yenile  ·  "
+                + (epgGuide == null ? "Bekliyor" : epgGuide.channelCount() + " kanal"));
     }
 
     private void applyAspectMode() {
@@ -574,6 +742,345 @@ public final class MainActivity extends AppCompatActivity {
         playerView.setResizeMode(resizeMode);
     }
 
+    private void cycleQualityMode() {
+        String current = getSharedPreferences(PREFS, 0).getString(QUALITY_MODE_KEY, "auto");
+        String next = "auto".equals(current) ? "low" : "low".equals(current)
+                ? "medium" : "medium".equals(current) ? "high" : "auto";
+        getSharedPreferences(PREFS, 0).edit().putString(QUALITY_MODE_KEY, next).apply();
+        applyTrackPreferences();
+        refreshSettingLabels();
+    }
+
+    private void applyTrackPreferences() {
+        if (player == null) {
+            return;
+        }
+        TrackSelectionParameters.Builder builder = player.getTrackSelectionParameters().buildUpon();
+        String quality = getSharedPreferences(PREFS, 0).getString(QUALITY_MODE_KEY, "auto");
+        if ("low".equals(quality)) {
+            builder.setMaxVideoSize(854, 480).setMaxVideoBitrate(1_800_000);
+        } else if ("medium".equals(quality)) {
+            builder.setMaxVideoSize(1280, 720).setMaxVideoBitrate(4_500_000);
+        } else if ("high".equals(quality)) {
+            builder.setMaxVideoSize(1920, 1080).setMaxVideoBitrate(10_000_000);
+        } else {
+            builder.setMaxVideoSize(Integer.MAX_VALUE, Integer.MAX_VALUE)
+                    .setMaxVideoBitrate(Integer.MAX_VALUE);
+        }
+        String audio = getSharedPreferences(PREFS, 0).getString(AUDIO_LANGUAGE_KEY, "auto");
+        builder.setPreferredAudioLanguage("auto".equals(audio) ? null : audio);
+        String subtitle = getSharedPreferences(PREFS, 0)
+                .getString(SUBTITLE_LANGUAGE_KEY, "off");
+        builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, "off".equals(subtitle));
+        builder.setPreferredTextLanguage("off".equals(subtitle) || "auto".equals(subtitle)
+                ? null : subtitle);
+        player.setTrackSelectionParameters(builder.build());
+    }
+
+    private void showAudioLanguageDialog() {
+        List<String> codes = availableTrackLanguages(C.TRACK_TYPE_AUDIO);
+        ArrayList<String> choices = new ArrayList<>();
+        choices.add("Otomatik");
+        for (String code : codes) {
+            choices.add(languageLabel(code, code));
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Ses dili")
+                .setItems(choices.toArray(new String[0]), (dialog, which) -> {
+                    String value = which == 0 ? "auto" : codes.get(which - 1);
+                    getSharedPreferences(PREFS, 0).edit()
+                            .putString(AUDIO_LANGUAGE_KEY, value).apply();
+                    applyTrackPreferences();
+                    refreshSettingLabels();
+                })
+                .setNegativeButton("İptal", null)
+                .show();
+    }
+
+    private void showSubtitleLanguageDialog() {
+        List<String> codes = availableTrackLanguages(C.TRACK_TYPE_TEXT);
+        ArrayList<String> choices = new ArrayList<>();
+        choices.add("Kapalı");
+        choices.add("Otomatik");
+        for (String code : codes) {
+            choices.add(languageLabel(code, code));
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Altyazı")
+                .setItems(choices.toArray(new String[0]), (dialog, which) -> {
+                    String value = which == 0 ? "off" : which == 1
+                            ? "auto" : codes.get(which - 2);
+                    getSharedPreferences(PREFS, 0).edit()
+                            .putString(SUBTITLE_LANGUAGE_KEY, value).apply();
+                    applyTrackPreferences();
+                    refreshSettingLabels();
+                })
+                .setNegativeButton("İptal", null)
+                .show();
+    }
+
+    private List<String> availableTrackLanguages(int trackType) {
+        ArrayList<String> values = new ArrayList<>();
+        if (player == null) {
+            return values;
+        }
+        for (Tracks.Group group : player.getCurrentTracks().getGroups()) {
+            if (group.getType() != trackType) {
+                continue;
+            }
+            for (int i = 0; i < group.length; i++) {
+                Format format = group.getTrackFormat(i);
+                String language = format.language;
+                if (language != null && !language.trim().isEmpty()
+                        && !"und".equalsIgnoreCase(language) && !values.contains(language)) {
+                    values.add(language);
+                }
+            }
+        }
+        return values;
+    }
+
+    private String languageLabel(String code, String fallback) {
+        if (code == null || "auto".equals(code)) {
+            return fallback;
+        }
+        Locale locale = Locale.forLanguageTag(code);
+        String label = locale.getDisplayLanguage(Locale.forLanguageTag("tr-TR"));
+        return label == null || label.trim().isEmpty() ? fallback : label;
+    }
+
+    private void refreshEpg(boolean force) {
+        if (force) {
+            Toast.makeText(this, "Program rehberi yenileniyor", Toast.LENGTH_SHORT).show();
+        }
+        EpgRepository.load(this, force, (guide, fresh) -> {
+            if (isFinishing() || isDestroyed()) {
+                return;
+            }
+            epgGuide = guide;
+            rebuildChannelList();
+            if (!channels.isEmpty()) {
+                updateNowPlaying(channels.get(currentIndex));
+            }
+            refreshSettingLabels();
+            if (force && fresh) {
+                Toast.makeText(this, guide.channelCount()
+                        + " kanallık program rehberi güncellendi", Toast.LENGTH_SHORT).show();
+            }
+        });
+    }
+
+    private void showCurrentProgramGuide() {
+        if (channels.isEmpty() || epgGuide == null) {
+            Toast.makeText(this, "Program rehberi henüz hazır değil", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        Channel channel = channels.get(currentIndex);
+        List<EpgProgram> programs = epgGuide.upcoming(
+                channel.name, System.currentTimeMillis(), 8);
+        if (programs.isEmpty()) {
+            Toast.makeText(this, channel.name + " için program bilgisi bulunamadı",
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
+        String[] items = new String[programs.size()];
+        for (int i = 0; i < programs.size(); i++) {
+            EpgProgram program = programs.get(i);
+            items[i] = program.timeRange() + "  " + program.title;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle(channel.name + " · Program akışı")
+                .setItems(items, (dialog, which) -> {
+                    EpgProgram program = programs.get(which);
+                    if (!program.description.isEmpty()) {
+                        new AlertDialog.Builder(this)
+                                .setTitle(program.title)
+                                .setMessage(program.timeRange() + "\n\n" + program.description)
+                                .setPositiveButton("Kapat", null)
+                                .show();
+                    }
+                })
+                .setNegativeButton("Kapat", null)
+                .show();
+    }
+
+    private String epgTitle(Channel channel) {
+        EpgProgram current = epgGuide == null ? null
+                : epgGuide.current(channel.name, System.currentTimeMillis());
+        return current == null ? "Canlı yayın" : current.title;
+    }
+
+    private void toggleCurrentFavorite() {
+        if (!channels.isEmpty()) {
+            toggleFavorite(channels.get(currentIndex));
+        }
+    }
+
+    private void toggleFavorite(Channel channel) {
+        boolean enabled = ChannelUserData.toggleFavorite(this, channel);
+        Toast.makeText(this, channel.name + (enabled
+                ? " favorilere eklendi" : " favorilerden çıkarıldı"), Toast.LENGTH_SHORT).show();
+        rebuildCategoryTabs();
+        rebuildChannelList();
+        refreshSettingLabels();
+    }
+
+    private void updateFavoriteLabels() {
+        if (channelFavoriteButton == null || channels.isEmpty()) {
+            return;
+        }
+        boolean favorite = ChannelUserData.isFavorite(this, channels.get(currentIndex));
+        channelFavoriteButton.setText((favorite ? "★" : "☆")
+                + "  Geçerli kanal favorisi");
+    }
+
+    private void requestToggleCurrentLock() {
+        if (channels.isEmpty()) {
+            return;
+        }
+        Runnable toggle = () -> {
+            Channel channel = channels.get(currentIndex);
+            boolean locked = ChannelUserData.toggleLocked(this, channel);
+            if (!locked) {
+                unlockedChannels.remove(channel.key());
+            }
+            Toast.makeText(this, channel.name + (locked ? " kilitlendi" : " kilidi kaldırıldı"),
+                    Toast.LENGTH_SHORT).show();
+            rebuildChannelList();
+            refreshSettingLabels();
+        };
+        if (ChannelUserData.hasPin(this)) {
+            requestPinVerification("Kanal kilidini değiştir", toggle);
+        } else {
+            requestNewPin(toggle);
+        }
+    }
+
+    private void requestPinChange() {
+        if (ChannelUserData.hasPin(this)) {
+            requestPinVerification("Mevcut PIN", () -> requestNewPin(null));
+        } else {
+            requestNewPin(null);
+        }
+    }
+
+    private void requestPinVerification(String title, Runnable onVerified) {
+        EditText input = pinInput();
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(title)
+                .setMessage("Ebeveyn PIN'ini girin")
+                .setView(input)
+                .setPositiveButton("Doğrula", null)
+                .setNegativeButton("İptal", null)
+                .create();
+        dialog.setOnShowListener(ignored -> {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(view -> {
+                if (ChannelUserData.verifyPin(this, input.getText().toString())) {
+                    dialog.dismiss();
+                    onVerified.run();
+                } else {
+                    input.setError("PIN yanlış");
+                    input.selectAll();
+                }
+            });
+            input.requestFocus();
+        });
+        dialog.show();
+    }
+
+    private void requestNewPin(Runnable afterSave) {
+        EditText input = pinInput();
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Yeni ebeveyn PIN'i")
+                .setMessage("4–8 rakam belirleyin")
+                .setView(input)
+                .setPositiveButton("Kaydet", null)
+                .setNegativeButton("İptal", null)
+                .create();
+        dialog.setOnShowListener(ignored -> {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(view -> {
+                if (ChannelUserData.setPin(this, input.getText().toString())) {
+                    dialog.dismiss();
+                    Toast.makeText(this, "Ebeveyn PIN'i kaydedildi", Toast.LENGTH_SHORT).show();
+                    if (afterSave != null) {
+                        afterSave.run();
+                    }
+                } else {
+                    input.setError("PIN 4–8 rakam olmalı");
+                    input.selectAll();
+                }
+            });
+            input.requestFocus();
+        });
+        dialog.show();
+    }
+
+    private EditText pinInput() {
+        EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setInputType(InputType.TYPE_CLASS_NUMBER
+                | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
+        input.setPadding(dp(20), dp(16), dp(20), dp(16));
+        return input;
+    }
+
+    private void exportSettings() {
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT)
+                .addCategory(Intent.CATEGORY_OPENABLE)
+                .setType("application/json")
+                .putExtra(Intent.EXTRA_TITLE, "turkiye-tv-ayarlar.json");
+        startActivityForResult(intent, EXPORT_SETTINGS_REQUEST);
+    }
+
+    private void importSettings() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT)
+                .addCategory(Intent.CATEGORY_OPENABLE)
+                .setType("application/json");
+        startActivityForResult(intent, IMPORT_SETTINGS_REQUEST);
+    }
+
+    private void writeSettingsBackup(Uri uri) {
+        try (OutputStream output = getContentResolver().openOutputStream(uri, "wt")) {
+            if (output == null) {
+                throw new IllegalStateException("Dosya açılamadı");
+            }
+            output.write(ChannelUserData.exportJson(this).getBytes(StandardCharsets.UTF_8));
+            Toast.makeText(this, "Ayar yedeği kaydedildi", Toast.LENGTH_SHORT).show();
+        } catch (Exception error) {
+            Toast.makeText(this, "Yedek kaydedilemedi", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void readSettingsBackup(Uri uri) {
+        try (InputStream input = getContentResolver().openInputStream(uri)) {
+            if (input == null) {
+                throw new IllegalStateException("Dosya açılamadı");
+            }
+            BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(input, StandardCharsets.UTF_8));
+            StringBuilder json = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (json.length() + line.length() > 1_000_000) {
+                    throw new IllegalStateException("Yedek dosyası çok büyük");
+                }
+                json.append(line).append('\n');
+            }
+            ChannelUserData.importJson(this, json.toString());
+            unlockedChannels.clear();
+            applyAspectMode();
+            applyTrackPreferences();
+            rebuildCategoryTabs();
+            rebuildChannelList();
+            refreshSettingLabels();
+            Toast.makeText(this, "Ayarlar ve favoriler geri yüklendi",
+                    Toast.LENGTH_SHORT).show();
+        } catch (Exception error) {
+            Toast.makeText(this, "Geçerli bir Türkiye Canlı TV yedeği seçin",
+                    Toast.LENGTH_LONG).show();
+        }
+    }
+
     private void loadChannels() {
         int sweepGeneration = ++healthSweepGeneration;
         showLoading("Kanallar hazırlanıyor…");
@@ -583,6 +1090,10 @@ public final class MainActivity extends AppCompatActivity {
                 channels.clear();
                 channels.addAll(loaded);
                 resolvedStreams.clear();
+                channelStatuses.clear();
+                for (Channel channel : channels) {
+                    channelStatuses.put(channel.number, ChannelStatus.CHECKING);
+                }
                 searchQuery = "";
                 rebuildChannelList();
 
@@ -591,6 +1102,7 @@ public final class MainActivity extends AppCompatActivity {
                     return;
                 }
                 startAfterCatalogLoad();
+                refreshEpg(false);
                 uiHandler.postDelayed(() -> startChannelHealthSweep(sweepGeneration), 4_000L);
             });
         }, "channel-catalog").start();
@@ -600,18 +1112,15 @@ public final class MainActivity extends AppCompatActivity {
         channelList.removeAllViews();
         channelRows.clear();
         String foldedQuery = foldSearch(searchQuery);
-        int visibleCount = 0;
+        List<Integer> visibleIndexes = filteredChannelIndexes(foldedQuery);
 
-        for (int i = 0; i < channels.size(); i++) {
+        for (int i : visibleIndexes) {
             Channel channel = channels.get(i);
-            if (!foldedQuery.isEmpty() && !foldSearch(channel.name).contains(foldedQuery)) {
-                continue;
-            }
-            visibleCount++;
-            TextView row = text(formatChannelRow(i), 19);
+            TextView row = text(formatChannelRow(i), 16);
             row.setId(View.generateViewId());
             row.setGravity(Gravity.CENTER_VERTICAL);
-            row.setSingleLine(true);
+            row.setSingleLine(false);
+            row.setMaxLines(2);
             row.setFocusable(true);
             row.setTag(i);
             row.setBackgroundResource(R.drawable.channel_row_background);
@@ -623,15 +1132,21 @@ public final class MainActivity extends AppCompatActivity {
                 }
                 showChannelPanel(false);
             });
+            row.setOnLongClickListener(view -> {
+                int selectedIndex = (Integer) view.getTag();
+                toggleFavorite(channels.get(selectedIndex));
+                return true;
+            });
+            row.setTextColor(i == currentIndex ? 0xffff6973 : statusColor(channel));
 
             LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dp(62));
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(68));
             rowParams.setMargins(0, 0, 0, dp(5));
             channelList.addView(row, rowParams);
             channelRows.add(row);
         }
 
-        if (visibleCount == 0) {
+        if (visibleIndexes.isEmpty()) {
             TextView empty = text("Eşleşen kanal bulunamadı", 18);
             empty.setTextColor(0xffaab7c9);
             empty.setGravity(Gravity.CENTER);
@@ -639,21 +1154,55 @@ public final class MainActivity extends AppCompatActivity {
                     ViewGroup.LayoutParams.MATCH_PARENT, dp(100)));
         }
 
-        if (searchQuery.isEmpty()) {
-            channelCount.setText(String.format(Locale.forLanguageTag("tr-TR"),
-                    "%d kanal", channels.size()));
+        if (searchQuery.isEmpty() && "Tümü".equals(selectedCategory)) {
+            channelCount.setText(String.format(Locale.forLanguageTag("tr-TR"), "%d kanal",
+                    channels.size()));
             channelSearchButton.setText("Kanal ara  ·  YEŞİL");
         } else {
             channelCount.setText(String.format(Locale.forLanguageTag("tr-TR"),
-                    "%d/%d sonuç", visibleCount, channels.size()));
-            channelSearchButton.setText("Arama: " + searchQuery + "  ·  YEŞİL");
+                    "%s  ·  %d/%d", selectedCategory, visibleIndexes.size(), channels.size()));
+            channelSearchButton.setText(searchQuery.isEmpty() ? "Kanal ara  ·  YEŞİL"
+                    : "Arama: " + searchQuery + "  ·  YEŞİL");
         }
+        updateFavoriteLabels();
     }
 
     private String formatChannelRow(int index) {
         Channel channel = channels.get(index);
-        return String.format(Locale.ROOT, "%03d    %s%s",
-                channel.number, channel.name, index == currentIndex ? "    • CANLI" : "");
+        ChannelStatus status = statusFor(channel);
+        String favorite = ChannelUserData.isFavorite(this, channel) ? "★" : " ";
+        String locked = ChannelUserData.isLocked(this, channel) ? " 🔒" : "";
+        EpgProgram current = epgGuide == null ? null
+                : epgGuide.current(channel.name, System.currentTimeMillis());
+        String programme = current == null ? channel.category()
+                : current.timeRange() + "  " + current.title;
+        return String.format(Locale.forLanguageTag("tr-TR"), "%s %03d  %s%s    %s %s\n     %s",
+                favorite, channel.number, channel.name, locked, status.symbol, status.label, programme);
+    }
+
+    private List<Integer> filteredChannelIndexes(String foldedQuery) {
+        ArrayList<Integer> result = new ArrayList<>();
+        List<String> recent = ChannelUserData.recent(this);
+        for (int i = 0; i < channels.size(); i++) {
+            Channel channel = channels.get(i);
+            if (!foldedQuery.isEmpty() && !foldSearch(channel.name).contains(foldedQuery)) {
+                continue;
+            }
+            boolean matches = "Tümü".equals(selectedCategory)
+                    || ("Favoriler".equals(selectedCategory)
+                    && ChannelUserData.isFavorite(this, channel))
+                    || ("Son İzlenen".equals(selectedCategory) && recent.contains(channel.key()))
+                    || selectedCategory.equals(channel.category());
+            if (matches) {
+                result.add(i);
+            }
+        }
+        if ("Son İzlenen".equals(selectedCategory)) {
+            Collections.sort(result, (left, right) -> Integer.compare(
+                    recent.indexOf(channels.get(left).key()),
+                    recent.indexOf(channels.get(right).key())));
+        }
+        return result;
     }
 
     private void refreshChannelRows() {
@@ -662,7 +1211,8 @@ public final class MainActivity extends AppCompatActivity {
                 int index = (Integer) row.getTag();
                 row.setText(formatChannelRow(index));
                 if (!row.hasFocus()) {
-                    row.setTextColor(index == currentIndex ? 0xffff6973 : Color.WHITE);
+                    row.setTextColor(index == currentIndex
+                            ? 0xffff6973 : statusColor(channels.get(index)));
                 }
             }
         }
@@ -673,9 +1223,38 @@ public final class MainActivity extends AppCompatActivity {
                 .setDuration(110).start();
         boolean current = view.getTag() instanceof Integer
                 && (Integer) view.getTag() == currentIndex;
+        int defaultColor = Color.WHITE;
+        if (view.getTag() instanceof String) {
+            defaultColor = view.getTag().equals(selectedCategory) ? 0xffff6973 : Color.WHITE;
+        }
+        if (view.getTag() instanceof Integer) {
+            int index = (Integer) view.getTag();
+            if (index >= 0 && index < channels.size()) {
+                defaultColor = statusColor(channels.get(index));
+            }
+        }
         ((TextView) view).setTextColor(hasFocus
                 ? Color.WHITE
-                : current ? 0xffff6973 : Color.WHITE);
+                : current ? 0xffff6973 : defaultColor);
+    }
+
+    private int statusColor(Channel channel) {
+        ChannelStatus status = statusFor(channel);
+        if (status == ChannelStatus.NATIVE) {
+            return 0xffbceac7;
+        }
+        if (status == ChannelStatus.WEB) {
+            return 0xffffd27a;
+        }
+        if (status == ChannelStatus.UNAVAILABLE) {
+            return 0xff93a0b2;
+        }
+        return 0xffe6edf7;
+    }
+
+    private ChannelStatus statusFor(Channel channel) {
+        ChannelStatus status = channelStatuses.get(channel.number);
+        return status == null ? ChannelStatus.CHECKING : status;
     }
 
     private void startAfterCatalogLoad() {
@@ -728,6 +1307,19 @@ public final class MainActivity extends AppCompatActivity {
         if (index < 0 || index >= channels.size()) {
             return;
         }
+        Channel requested = channels.get(index);
+        if (ChannelUserData.isLocked(this, requested)
+                && !unlockedChannels.contains(requested.key())) {
+            requestPinVerification("Kilitli kanal · " + requested.name, () -> {
+                unlockedChannels.add(requested.key());
+                tuneUnlocked(index, startPlayback);
+            });
+            return;
+        }
+        tuneUnlocked(index, startPlayback);
+    }
+
+    private void tuneUnlocked(int index, boolean startPlayback) {
         if (index == currentIndex && startPlayback && isCurrentChannelActive()) {
             showChannelPanel(false);
             showSettingsPanel(false);
@@ -739,6 +1331,7 @@ public final class MainActivity extends AppCompatActivity {
         tuneGeneration++;
         automaticRetryCount = 0;
         Channel channel = channels.get(index);
+        ChannelUserData.recordRecent(this, channel);
         updateNowPlaying(channel);
         setLiveState(startPlayback ? "YÜKLENİYOR" : "HAZIR");
 
@@ -761,10 +1354,13 @@ public final class MainActivity extends AppCompatActivity {
     private void startChannelPlayback(Channel channel, int generation) {
         waitingForManualStart = false;
         showLoading("Yayın yükleniyor…");
+        channelStatuses.put(channel.number, ChannelStatus.CHECKING);
+        refreshChannelRows();
 
         String cachedStream = resolvedStreams.get(channel.number);
         Set<String> excluded = failedStreams.get(channel.number);
         if (cachedStream != null && (excluded == null || !excluded.contains(cachedStream))) {
+            channelStatuses.put(channel.number, ChannelStatus.NATIVE);
             playStream(cachedStream);
             return;
         }
@@ -779,6 +1375,7 @@ public final class MainActivity extends AppCompatActivity {
                 }
                 if (resolvedUrl != null && isPlayableStream(resolvedUrl)) {
                     resolvedStreams.put(channel.number, resolvedUrl);
+                    channelStatuses.put(channel.number, ChannelStatus.NATIVE);
                     playStream(resolvedUrl);
                 } else {
                     openWebFallback(channel, generation);
@@ -790,7 +1387,16 @@ public final class MainActivity extends AppCompatActivity {
     private void playStream(String url) {
         activeStreamUrl = url;
         String value = url.toLowerCase(Locale.ROOT);
-        MediaItem.Builder item = new MediaItem.Builder().setUri(url);
+        Channel channel = channels.get(currentIndex);
+        MediaMetadata metadata = new MediaMetadata.Builder()
+                .setTitle(channel.name)
+                .setArtist("Türkiye Canlı TV")
+                .setAlbumTitle(epgTitle(channel))
+                .build();
+        MediaItem.Builder item = new MediaItem.Builder()
+                .setMediaId(String.valueOf(channel.number))
+                .setMediaMetadata(metadata)
+                .setUri(url);
         if (value.contains(".m3u8") || value.contains("format=m3u8")) {
             item.setMimeType(MimeTypes.APPLICATION_M3U8);
         } else if (value.contains(".mpd") || value.contains("format=mpd")) {
@@ -845,6 +1451,8 @@ public final class MainActivity extends AppCompatActivity {
         player.clearMediaItems();
         showLoading(null);
         setLiveState("WEB OYNATICI");
+        channelStatuses.put(channel.number, ChannelStatus.WEB);
+        refreshChannelRows();
         Toast.makeText(this, channel.name + " web oynatıcısıyla açılıyor",
                 Toast.LENGTH_SHORT).show();
         webFallbackOpen = true;
@@ -854,10 +1462,24 @@ public final class MainActivity extends AppCompatActivity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == EXPORT_SETTINGS_REQUEST || requestCode == IMPORT_SETTINGS_REQUEST) {
+            if (resultCode == RESULT_OK && data != null && data.getData() != null) {
+                if (requestCode == EXPORT_SETTINGS_REQUEST) {
+                    writeSettingsBackup(data.getData());
+                } else {
+                    readSettingsBackup(data.getData());
+                }
+            }
+            return;
+        }
         if (requestCode != WEB_PLAYER_REQUEST) {
             return;
         }
         webFallbackOpen = false;
+        if (!channels.isEmpty() && WebPlayerActivity.playbackFailed(data)) {
+            channelStatuses.put(channels.get(currentIndex).number, ChannelStatus.UNAVAILABLE);
+            refreshChannelRows();
+        }
         int delta = resultCode == RESULT_OK ? WebPlayerActivity.channelDelta(data) : 0;
         if (delta != 0 && !channels.isEmpty()) {
             tune((currentIndex + delta + channels.size()) % channels.size());
@@ -900,6 +1522,11 @@ public final class MainActivity extends AppCompatActivity {
                     networkUnavailable = true;
                     runOnUiThread(() -> {
                         if (!isFinishing() && !webFallbackOpen) {
+                            if (!channels.isEmpty()) {
+                                channelStatuses.put(channels.get(currentIndex).number,
+                                        ChannelStatus.UNAVAILABLE);
+                                refreshChannelRows();
+                            }
                             setLiveState("BAĞLANTI YOK");
                         }
                     });
@@ -997,6 +1624,16 @@ public final class MainActivity extends AppCompatActivity {
                         if (generation == healthSweepGeneration
                                 && findChannelIndexExact(channel.number) >= 0) {
                             resolvedStreams.put(channel.number, resolvedUrl);
+                            channelStatuses.put(channel.number, ChannelStatus.NATIVE);
+                            refreshChannelRows();
+                        }
+                    });
+                } else {
+                    runOnUiThread(() -> {
+                        if (generation == healthSweepGeneration
+                                && findChannelIndexExact(channel.number) >= 0) {
+                            channelStatuses.put(channel.number, ChannelStatus.WEB);
+                            refreshChannelRows();
                         }
                     });
                 }
@@ -1021,6 +1658,17 @@ public final class MainActivity extends AppCompatActivity {
         if (nowPlayingTitle != null) {
             nowPlayingTitle.setText(channel.name);
         }
+        if (nowPlayingProgram != null) {
+            long now = System.currentTimeMillis();
+            EpgProgram current = epgGuide == null ? null : epgGuide.current(channel.name, now);
+            if (current == null) {
+                nowPlayingProgram.setText(channel.category() + "  ·  Program bilgisi bekleniyor");
+            } else {
+                nowPlayingProgram.setText(current.timeRange() + "  " + current.title
+                        + "  ·  %" + current.progressPercent(now));
+            }
+        }
+        updateFavoriteLabels();
     }
 
     private void setLiveState(String state) {
@@ -1037,9 +1685,18 @@ public final class MainActivity extends AppCompatActivity {
     private void showChannelInfo(Channel channel, boolean force) {
         showTopStatusBar();
         updateNowPlaying(channel);
+        long now = System.currentTimeMillis();
+        EpgProgram current = epgGuide == null ? null : epgGuide.current(channel.name, now);
+        EpgProgram next = epgGuide == null ? null : epgGuide.next(channel.name, now);
+        ChannelStatus status = statusFor(channel);
+        String currentText = current == null ? "Program bilgisi yok"
+                : current.timeRange() + "  " + current.title;
+        String nextText = next == null ? "Sonraki program bilgisi yok"
+                : next.timeRange() + "  " + next.title;
         channelInfo.setText(String.format(Locale.forLanguageTag("tr-TR"),
-                "%03d  %s\nP+ / P-  Kanal    •    OK  Rehber    •    INFO  Detay",
-                channel.number, channel.name));
+                "%03d  %s  ·  %s %s\nŞimdi  %s\nSonra  %s\nP+ / P- Kanal  ·  OK Rehber  ·  INFO Detay",
+                channel.number, channel.name, status.symbol, status.label,
+                currentText, nextText));
         channelInfo.animate().cancel();
         channelInfo.setAlpha(0f);
         channelInfo.setTranslationY(dp(14));
@@ -1452,10 +2109,47 @@ public final class MainActivity extends AppCompatActivity {
     }
 
     @Override
+    public void onUserLeaveHint() {
+        super.onUserLeaveHint();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                && getSharedPreferences(PREFS, 0).getBoolean(PIP_ENABLED_KEY, true)
+                && player != null && player.isPlaying()
+                && getPackageManager().hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) {
+            try {
+                PictureInPictureParams params = new PictureInPictureParams.Builder()
+                        .setAspectRatio(new Rational(16, 9))
+                        .build();
+                enterPictureInPictureMode(params);
+            } catch (RuntimeException ignored) {
+                // Some TV firmware advertises PiP but rejects the transition.
+            }
+        }
+    }
+
+    @Override
+    public void onPictureInPictureModeChanged(boolean inPictureInPictureMode,
+                                              Configuration newConfig) {
+        super.onPictureInPictureModeChanged(inPictureInPictureMode, newConfig);
+        if (inPictureInPictureMode) {
+            topStatusBar.setVisibility(View.GONE);
+            channelInfo.setVisibility(View.GONE);
+            loadingOverlay.setVisibility(View.GONE);
+            channelPanel.setVisibility(View.GONE);
+            settingsPanel.setVisibility(View.GONE);
+        } else {
+            enterImmersiveMode();
+            if (player != null && player.getPlaybackState() == Player.STATE_READY) {
+                scheduleTopStatusBarHide();
+            }
+        }
+    }
+
+    @Override
     protected void onStop() {
         super.onStop();
         resumePlaybackOnStart = player != null && player.isPlaying();
-        if (player != null) {
+        if (player != null && (Build.VERSION.SDK_INT < Build.VERSION_CODES.O
+                || !isInPictureInPictureMode())) {
             player.pause();
         }
     }
@@ -1466,6 +2160,10 @@ public final class MainActivity extends AppCompatActivity {
         uiHandler.removeCallbacksAndMessages(null);
         if (searchDialog != null) {
             searchDialog.dismiss();
+        }
+        if (mediaSession != null) {
+            mediaSession.release();
+            mediaSession = null;
         }
         if (player != null) {
             player.release();

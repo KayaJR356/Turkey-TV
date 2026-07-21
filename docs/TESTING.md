@@ -9,6 +9,8 @@ GitHub Actions her push ve pull request için şunları çalıştırır:
 - Derlenen debug APK'yı `TurkiyeCanliTV-debug` iş akışı artifact'i olarak yükleme
 - `AppUpdateManager` sürüm karşılaştırması için yerel birim testleri
 - `ChannelRepository` katalog sınıf sırası, ad fallback'i, yinelenen kimlik ve güvenilmeyen bağlantı testleri
+- `Channel` kategori eşleştirme ve katalog kategori önceliği testleri
+- `EpgRepository` XMLTV zaman ayrıştırma, `TR -`/HD ad eşleştirme ve şimdi/sonra program testleri
 - Sürüm iş akışında kalıcı anahtarla imzalı release APK ve SHA-256 üretimi
 
 ## Katalog araştırması — 21 Temmuz 2026
@@ -68,6 +70,21 @@ Aşağıdaki kaynak biçimlerini temsil eden, yayın hakkı bakımcı tarafında
 27. APK indirmesinde ilerleme göstergesini, SHA-256 doğrulamasını, bilinmeyen uygulama izni
     yönlendirmesini ve Android paket kurulum ekranını doğrulayın.
 28. Değiştirilmiş APK veya yanlış `.sha256` dosyasının kuruluma gönderilmediğini doğrulayın.
+29. Kategori sekmelerinin kaynak katalog sınıflandırmasına göre doğru kanalları gösterdiğini doğrulayın.
+30. Bir kanal satırında OK tuşunu basılı tutarak favoriyi değiştirin; Favoriler filtresini ve uygulama
+    yeniden başladıktan sonra kalıcılığı doğrulayın.
+31. Birkaç kanal izleyip Son İzlenen filtresinin en yeni kanal önce olacak şekilde sıralandığını doğrulayın.
+32. EPG yenilemesinden sonra kanal satırı, üst şerit, Bilgi kartı ve program akışında şimdi/sonra
+    verisinin tutarlı olduğunu doğrulayın; çevrimdışıyken önbelleği yeniden sınayın.
+33. Kalite sınırlarını değiştirin; çoklu ses/altyazı sunan örnekte dil seçimini ve kapalı altyazıyı sınayın.
+34. Sistem medya tuşlarının MediaSession oynatmasını ve kanal/program metadatasını doğrulayın.
+35. Destekleyen cihazda Ana Ekran tuşuyla görüntü içinde görüntüye geçişi, dönüşü ve oynatmanın
+    kesilmemesini hem yerel hem web oynatıcıda sınayın.
+36. Ebeveyn PIN'i oluşturun, kanalı kilitleyin, yanlış/doğru PIN'i ve uygulama yeniden başladıktan
+    sonra yeniden doğrulama gereksinimini sınayın.
+37. Ayar yedeğini dışa aktarın; favori/ayar değiştirip yedeği içe alın ve izin verilen verilerin geri geldiğini doğrulayın.
+38. Cihaz açılışını etkinleştirip yeniden başlatın; ilk, 12 saniyelik ve 32 saniyelik denemelerden
+    sonra üretici TV uygulamasının Türkiye Canlı TV'nin önüne geçmediğini doğrulayın.
 
 ## Yayın doğrulama sınırı
 

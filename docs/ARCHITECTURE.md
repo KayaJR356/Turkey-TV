@@ -4,7 +4,7 @@
 
 1. `ChannelRepository`, masaüstü tarayıcı kimliğiyle `https://www.canlitv.diy/tr` sayfasını indirir.
 2. jsoup DOM ayrıştırıcısı, sınıfların sırasından ve HTML öznitelik düzeninden bağımsız olarak
-   `ft_<oynatıcı-kimliği>` ve `tv` sınıflı satırlardan ad, sayfa bağlantısı ve oynatıcı kimliği alır.
+   `ft_<oynatıcı-kimliği>` ve `tv` sınıflı satırlardan ad, sayfa bağlantısı, kategori ve oynatıcı kimliği alır.
 3. Kanallar sayfadaki sıraya göre 1'den başlayarak numaralandırılır.
 4. En az 250 kayıt dönmeyen yanıt eksik kabul edilir ve kaydedilmez.
 5. Ağ veya site hatasında yalnızca daha önce kaydedilmiş eksiksiz katalog kullanılır. Eksiksiz katalog yoksa kullanıcıya hata gösterilir.
@@ -33,6 +33,10 @@
     olarak denenir; her iki yol başarısız olsa da kanal listede kalır.
 16. Ağ bağlantısı geri geldiğinde katalog veya seçili yerel yayın otomatik yeniden denenir.
 17. Web oynatıcı `Program + / -` sonucunu ana etkinliğe döndürerek katalog sırasını korur.
+18. Her kanal `Denetleniyor`, `Yerel`, `Web` veya `Geçici sorun` durumuyla gösterilir; durum hiçbir
+    zaman kataloğun silinmesi ya da gizlenmesi için kullanılmaz.
+19. Media3 oynatıcı bir `MediaSession` ile sistem oynatma denetimlerine kanal ve program metadatası sunar.
+20. Kullanıcı kalite üst sınırı ile mevcut ses/altyazı dilini `TrackSelectionParameters` üzerinden seçebilir.
 
 > [!IMPORTANT]
 > Kaynak sayfa oynatılabilir bir HLS/DASH/MP4 akışı vermiyorsa, yayın kapalıysa veya erişim yayıncı tarafından engelleniyorsa uygulama akış üretemez. Çözümleyici yalnızca mevcut ve izin verilen medya kaynaklarını bulur.
@@ -51,6 +55,27 @@
 - Yükleme, hata ve numara girişleri ayrı kartlarla görünür; video üzerinde okunabilirlik için ekran gölgesi kullanılır.
 - İlk açılış seçimi, son kanal, otomatik oynatma, cihaz açılışında başlatma, bilgi süresi ve görüntü oranı `SharedPreferences` içinde tutulur.
 - Görüntü oranı Media3 `FIT`, `ZOOM` ve `FILL` modlarına eşlenir.
+- Kaynak katalogdaki `data-kat` değeri uygulama kategorilerine eşlenir; eski önbelleklerde ad tabanlı
+  sınıflandırma geriye uyumlu yedek olarak kullanılır.
+- Favoriler, son izlenenler ve kanal kilitleri normalize edilmiş kanal anahtarıyla saklanır; katalog
+  sırası değişse de kullanıcı verisi korunur.
+- Destekleyen Android TV yazılımlarında yerel ve web oynatıcı Android görüntü içinde görüntü moduna geçebilir.
+
+## Program rehberi
+
+1. `EpgRepository`, sıkıştırılmış XMLTV verisini HTTPS üzerinden en fazla altı saatte bir yeniler.
+2. Sıkıştırılmış indirme 8 MB ile sınırlıdır ve SAX ile akış halinde ayrıştırılır.
+3. Yalnızca son iki saat ile gelecek 30 saat arasındaki kayıtlar tutulur.
+4. `TR -`, HD/FHD/UHD/4K ekleri ve Türkçe karakter farkları normalize edilerek katalog adıyla eşleştirilir.
+5. Kanal başına en fazla 12 yakın program cihazda önbelleğe alınır; ağ hatasında bu veri kullanılmaya devam eder.
+6. EPG kaynağında bulunmayan kanallar program bilgisi olmadan normal biçimde oynatılır.
+
+## Kullanıcı verisi ve ebeveyn denetimi
+
+- Ebeveyn PIN'i düz metin saklanmaz; rastgele 24 bayt tuz ve 50.000 turlu SHA-256 türetimi kullanılır.
+- Kilitli kanal PIN doğrulanmadan ayarlanmaz; doğrulama yalnızca açık uygulama oturumu boyunca hatırlanır.
+- JSON yedeği yalnızca beyaz listedeki ayar, favori, geçmiş, kilit ve PIN değerlerini içerir.
+- İçe aktarma 1 MB ile sınırlıdır ve bilinmeyen anahtarları yok sayar.
 
 ## Dayanıklılık ve güvenlik
 
@@ -63,6 +88,9 @@
 - Son eksiksiz katalog çevrimdışı başlangıcı destekler.
 - Süreli medya URL'leri yalnızca çalışan uygulama oturumunda saklanır.
 - Media3 hatasında iki alternatif akış denemesi yapılır; kullanıcı Kırmızı tuşla dışlanan kaynakları temizleyip tekrar deneyebilir.
+- XMLTV ayrıştırıcısında DOCTYPE ve harici varlıklar kapatılır.
+- Cihaz açılışında başlatma, açıkça etkinleştirildiğinde ilk sinyalin ardından 12 ve 32 saniyelik
+  iki ek AlarmManager denemesi yapar. Üretici yazılımının arka plan etkinliği politikasını aşamaz.
 
 ## Uygulama içi güncelleme
 
