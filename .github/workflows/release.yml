@@ -1,0 +1,104 @@
+name: Publish debug prerelease
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - app/build.gradle
+      - .github/workflows/release.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: debug-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Read application version
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="$(sed -n -E "s/^[[:space:]]*versionName[[:space:]]+['\"]([^'\"]+)['\"].*/\1/p" app/build.gradle | head -n 1)"
+          if [[ -z "$VERSION" ]]; then
+            echo "versionName could not be read from app/build.gradle" >&2
+            exit 1
+          fi
+
+          TAG="v$VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Java 17
+        if: steps.version.outputs.exists == 'false'
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        if: steps.version.outputs.exists == 'false'
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: "8.9"
+          cache-provider: basic
+
+      - name: Build and lint
+        if: steps.version.outputs.exists == 'false'
+        run: gradle :app:assembleDebug :app:lint --no-daemon
+
+      - name: Package APK and checksum
+        if: steps.version.outputs.exists == 'false'
+        id: package
+        run: |
+          mkdir -p dist
+          APK="Turkiye-TV-${{ steps.version.outputs.version }}-debug.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "dist/$APK"
+          sha256sum "dist/$APK" > "dist/$APK.sha256"
+          echo "apk=$APK" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare release notes
+        if: steps.version.outputs.exists == 'false'
+        run: |
+          printf '%s\n' \
+            '## Türkiye TV ${{ steps.version.outputs.version }}' \
+            '' \
+            'Bu sürüm Android TV ve Google TV arayüzünü, kanal rehberini ve HLS/DASH/MP4 yayın çözümlemeyi yeniler.' \
+            '' \
+            '### Doğrulama' \
+            '- GitHub Actions üzerinde Android debug build başarılı' \
+            '- Android Lint başarılı' \
+            '- APK ile birlikte SHA-256 checksum yayımlandı' \
+            '' \
+            '> [!WARNING]' \
+            '> Bu APK debug/test builddir; üretim anahtarıyla imzalanmış mağaza sürümü değildir. Üçüncü taraf yayınların erişilebilirliği yayıncıya, bölgeye ve zamana göre değişebilir.' \
+            > dist/RELEASE_NOTES.md
+
+      - name: Publish GitHub prerelease
+        if: steps.version.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.version.outputs.tag }}" \
+            "dist/${{ steps.package.outputs.apk }}" \
+            "dist/${{ steps.package.outputs.apk }}.sha256" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Türkiye TV ${{ steps.version.outputs.version }} (Debug)" \
+            --notes-file dist/RELEASE_NOTES.md \
+            --prerelease
