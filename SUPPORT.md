@@ -10,7 +10,7 @@ Türkiye Canlı TV ile ilgili yardım taleplerinin hızlı yönlendirilmesi içi
 | Yeni özellik veya deneyim önerisi | [Feature request](https://github.com/KayaJR356/Turkey-TV/issues/new?template=feature_request.yml) |
 | Kurulum ve kullanım | Bu belge ve [README](README.md) |
 | Güvenlik açığı | [SECURITY.md](SECURITY.md) — herkese açık issue açmayın |
-| Yayın hakkı veya kaldırma talebi | `TODO: Özel iletişim adresi ekleyin` |
+| Yayın hakkı veya kaldırma talebi | [Repository sahibinin GitHub profilindeki](https://github.com/KayaJR356) iletişim yöntemi |
 
 ## Issue açmadan önce
 
