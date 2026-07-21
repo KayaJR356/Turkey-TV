@@ -12,6 +12,26 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr-TR/1.1.0/) yaklaşımın
 - Yapılandırılmış bug report ve feature request formları
 - Pull request şablonu
 
+## [3.3.0] - 2026-07-21
+
+### Added
+
+- Destekleyen Android TV cihazlarında açılışta uygulamayı otomatik başlatma ayarı
+- Komşu kanallar için arka planda yayın URL'si ön çözümlemesi
+- Başarısız bir akıştan sonra aynı kanalın alternatif medya URL'sine otomatik geçiş
+
+### Changed
+
+- Uygulama görünen adı **Türkiye Canlı TV** olarak güncellendi
+- Kanal kaynakları paralel çözümlenerek başarısız uç noktaların bekleme süresi kısaltıldı
+- Bağlantı ve okuma zaman aşımı değerleri TV kanal geçişine uygun hâle getirildi
+
+### Fixed
+
+- Oynatma başladıktan sonra üst durum göstergesinin ekranda kalması
+- Kanal menüsü açılıp kapatılırken mevcut kanalın yeniden hazırlanması
+- Eski veya erişilemeyen ilk medya URL'sinin aynı kanalda tekrar tekrar denenmesi
+
 ## [3.2.0] - 2026-07-21
 
 > [!NOTE]
@@ -70,5 +90,6 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr-TR/1.1.0/) yaklaşımın
 
 Yeni bir release yayımlanırken tarih, karşılaştırma bağlantıları ve migration notları bu dosyaya eklenmelidir.
 
-[Unreleased]: https://github.com/KayaJR356/Turkey-TV/compare/v3.2.0...HEAD
+[Unreleased]: https://github.com/KayaJR356/Turkey-TV/compare/v3.3.0...HEAD
+[3.3.0]: https://github.com/KayaJR356/Turkey-TV/releases/tag/v3.3.0
 [3.2.0]: https://github.com/KayaJR356/Turkey-TV/releases/tag/v3.2.0
