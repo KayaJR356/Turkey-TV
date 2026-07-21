@@ -1,6 +1,6 @@
 # Güvenlik Politikası
 
-Türkiye TV'de güvenliği ciddiye alıyoruz. Sorumlu bildirim, kullanıcıları korumaya ve sorunu kamuya açıklanmadan önce değerlendirmeye yardımcı olur.
+Türkiye Canlı TV'de güvenliği ciddiye alıyoruz. Sorumlu bildirim, kullanıcıları korumaya ve sorunu kamuya açıklanmadan önce değerlendirmeye yardımcı olur.
 
 ## Desteklenen sürümler
 
