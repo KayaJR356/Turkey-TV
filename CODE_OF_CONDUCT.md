@@ -38,7 +38,7 @@ Bu Davranış Kuralları tüm topluluk alanlarında ve bir kişi resmî olarak t
 
 Taciz edici veya kabul edilemez davranışlar GitHub'ın özel raporlama kanalı üzerinden bakımcıya bildirilebilir.
 
-**Özel uygulama iletişimi:** `TODO: Herkese açık olmayan bir iletişim adresi ekleyin.`
+Hassas ayrıntıları herkese açık paylaşmadan [repository sahibinin GitHub profilinde](https://github.com/KayaJR356) sunduğu iletişim yöntemlerinden biriyle bildirim yapın.
 
 Güvenlik açıkları için ayrıca [SECURITY.md](SECURITY.md) belgesini izleyin. Tüm bildirimler gizlilik ve güvenlik gözetilerek incelenecektir.
 
