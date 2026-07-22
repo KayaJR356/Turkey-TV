@@ -285,6 +285,75 @@ final class ChannelRepository {
         }
     }
 
+    static String resolveWebPlayerUrl(String source, String referer) {
+        if (source == null || !source.startsWith("https://")) {
+            return source;
+        }
+        try {
+            String target = extractWebPlayerUrl(source,
+                    normalizeDocument(downloadText(source, referer)));
+            return target == null ? source : target;
+        } catch (Exception ignored) {
+            return source;
+        }
+    }
+
+    static String extractWebPlayerUrl(String source, String html) {
+        if (source == null || html == null || html.isEmpty()) {
+            return null;
+        }
+        Matcher embedMatcher = EMBED_URL.matcher(normalizeDocument(html));
+        while (embedMatcher.find()) {
+            String candidate = absoluteUrl(source, sanitizeUrl(embedMatcher.group(1)));
+            if (!sameUrl(source, candidate) && isTrustedWebPlayerTarget(candidate)) {
+                return candidate;
+            }
+        }
+
+        Matcher quotedMatcher = QUOTED_URL.matcher(normalizeDocument(html));
+        while (quotedMatcher.find()) {
+            String candidate = absoluteUrl(source, sanitizeUrl(quotedMatcher.group(1)));
+            if (!sameUrl(source, candidate) && isTrustedWebPlayerTarget(candidate)) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    private static boolean isTrustedWebPlayerTarget(String value) {
+        try {
+            URL url = new URL(value);
+            if (!"https".equalsIgnoreCase(url.getProtocol())) {
+                return false;
+            }
+            String host = url.getHost().toLowerCase(Locale.ROOT);
+            String path = url.getPath() == null ? "" : url.getPath().toLowerCase(Locale.ROOT);
+            if ("canlitv.diy".equals(host) || "www.canlitv.diy".equals(host)) {
+                return path.contains("/player/") || path.contains("html5video");
+            }
+            return isHostOrSubdomain(host, "youtube.com")
+                    || isHostOrSubdomain(host, "youtube-nocookie.com")
+                    || "youtu.be".equals(host)
+                    || isHostOrSubdomain(host, "canlitv.top")
+                    || isHostOrSubdomain(host, "radyolar.top")
+                    || isHostOrSubdomain(host, "hipodrom.com")
+                    || isHostOrSubdomain(host, "yoltv.com")
+                    || isHostOrSubdomain(host, "castr.net")
+                    || isHostOrSubdomain(host, "castr.com")
+                    || isHostOrSubdomain(host, "maksnet.tv");
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private static boolean isHostOrSubdomain(String host, String domain) {
+        return domain.equals(host) || host.endsWith("." + domain);
+    }
+
+    private static boolean sameUrl(String first, String second) {
+        return first != null && second != null && first.equalsIgnoreCase(second);
+    }
+
     private static void collectMediaUrls(String source, Set<String> candidates) {
         Matcher matcher = MEDIA_STREAM_URL.matcher(source);
         while (matcher.find()) {

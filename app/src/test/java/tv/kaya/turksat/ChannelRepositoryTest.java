@@ -1,6 +1,7 @@
 package tv.kaya.turksat;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
@@ -43,5 +44,30 @@ public final class ChannelRepositoryTest {
 
         assertEquals(1, channels.size());
         assertEquals("Bir", channels.get(0).name);
+    }
+
+    @Test
+    public void extractsDynamicPlayerTargetInsteadOfAdvertisementScripts() {
+        String source = "https://www.canlitv.diy/player/index.php?id=4&mobile=1";
+        String html = "<script src='https://imasdk.googleapis.com/js/sdkloader/ima3.js'></script>"
+                + "<script>const videoSrc='https://www.canlitv.diy/player/html5video.php?"
+                + "url=https://cdn.example.test/live/show.m3u8';"
+                + "function showGame(){game.innerHTML='<iframe src=\"' + videoSrc + '\" />';}"
+                + "</script>";
+
+        assertEquals("https://www.canlitv.diy/player/html5video.php?"
+                        + "url=https://cdn.example.test/live/show.m3u8",
+                ChannelRepository.extractWebPlayerUrl(source, html));
+    }
+
+    @Test
+    public void extractsTrustedExternalIframeAndRejectsUnknownHost() {
+        String source = "https://www.canlitv.diy/player/index.php?id=11222&mobile=1";
+
+        assertEquals("https://www.youtube.com/embed/example",
+                ChannelRepository.extractWebPlayerUrl(source,
+                        "<iframe src='https://www.youtube.com/embed/example'></iframe>"));
+        assertNull(ChannelRepository.extractWebPlayerUrl(source,
+                "<iframe src='https://example.com/advertisement'></iframe>"));
     }
 }

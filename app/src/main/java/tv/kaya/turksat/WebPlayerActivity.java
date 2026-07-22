@@ -8,11 +8,15 @@ import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.Color;
+import android.graphics.drawable.Drawable;
 import android.net.Uri;
 import android.net.http.SslError;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Rational;
+import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -30,11 +34,16 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
 import android.widget.ProgressBar;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
 
+import java.util.HashMap;
 import java.util.Locale;
+import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public final class WebPlayerActivity extends AppCompatActivity {
     private static final String EXTRA_URL = "channel_web_url";
@@ -42,14 +51,36 @@ public final class WebPlayerActivity extends AppCompatActivity {
     private static final String EXTRA_NAME = "channel_name";
     private static final String EXTRA_CHANNEL_DELTA = "channel_delta";
     private static final String EXTRA_PLAYBACK_FAILED = "playback_failed";
+    private static final String LOADING_TEXT = "Yayın yükleniyor…";
+    private static final String PLAYBACK_RECOVERY_SCRIPT =
+            "(function(){try{"
+                    + "if(typeof showGame==='function'){showGame();}"
+                    + "else if(typeof after_ads==='function'){after_ads();}"
+                    + "var buttons=document.querySelectorAll('.vjs-big-play-button,.jw-icon-playback,"
+                    + "#play-overlay,.play-button,[aria-label=\"Play\"]');"
+                    + "for(var i=0;i<buttons.length;i++){try{buttons[i].click();}catch(e){}}"
+                    + "var videos=document.querySelectorAll('video');"
+                    + "for(var j=0;j<videos.length;j++){try{var v=videos[j];"
+                    + "v.setAttribute('playsinline','');v.muted=false;var p=v.play();"
+                    + "if(p&&p.catch){p.catch(function(){});}}catch(e){}}"
+                    + "}catch(e){}})();";
+
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final ExecutorService resolverExecutor = Executors.newSingleThreadExecutor();
 
     private FrameLayout root;
     private WebView webView;
     private ProgressBar progress;
+    private TextView loadingLabel;
     private View customView;
     private WebChromeClient.CustomViewCallback customViewCallback;
+    private String sourceUrl;
     private String fallbackUrl;
+    private String currentUrl;
+    private boolean sourceWrapperAttempted;
     private boolean fallbackAttempted;
+    private boolean destroyed;
+    private int playbackRecoveryCount;
 
     static Intent createIntent(Context context, Channel channel) {
         String url = channel.isDirectStream() ? channel.pageUrl : channel.playbackUrl;
@@ -71,31 +102,35 @@ public final class WebPlayerActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        String url = getIntent().getStringExtra(EXTRA_URL);
+        sourceUrl = getIntent().getStringExtra(EXTRA_URL);
         fallbackUrl = getIntent().getStringExtra(EXTRA_FALLBACK_URL);
-        if (!isAllowedTopLevelUrl(fallbackUrl) || fallbackUrl.equals(url)) {
+        if (!isAllowedTopLevelUrl(fallbackUrl) || fallbackUrl.equals(sourceUrl)) {
             fallbackUrl = null;
         }
-        String channelName = getIntent().getStringExtra(EXTRA_NAME);
-        if (!isAllowedTopLevelUrl(url)) {
-            Toast.makeText(this, "Güvenli kanal adresi bulunamadı", Toast.LENGTH_LONG).show();
-            finish();
+        if (!isAllowedTopLevelUrl(sourceUrl)) {
+            finishWithPlaybackFailure("web/invalid-url", "Güvenli kanal adresi bulunamadı");
             return;
         }
 
+        try {
+            initializePlayerUi();
+            String channelName = getIntent().getStringExtra(EXTRA_NAME);
+            setTitle(channelName == null ? getString(R.string.app_name) : channelName);
+            resolveAndLoad(sourceUrl);
+        } catch (Throwable unavailable) {
+            AppDiagnostics.record(this, "web/init", unavailable);
+            finishWithPlaybackFailure("web/init", "Yayın bu cihazda başlatılamadı");
+        }
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    private void initializePlayerUi() {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         enterImmersiveMode();
         root = new FrameLayout(this);
         root.setBackgroundColor(Color.BLACK);
 
-        try {
-            webView = new WebView(this);
-        } catch (Throwable unavailable) {
-            Toast.makeText(this, "Bu cihazda web oynatıcı kullanılamıyor",
-                    Toast.LENGTH_LONG).show();
-            finish();
-            return;
-        }
+        webView = new WebView(this);
         webView.setBackgroundColor(Color.BLACK);
         webView.setFocusable(true);
         webView.setFocusableInTouchMode(true);
@@ -126,35 +161,95 @@ public final class WebPlayerActivity extends AppCompatActivity {
         progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
         progress.setIndeterminate(false);
         progress.setMax(100);
-        progress.getProgressDrawable().setTint(0xffe30a17);
+        Drawable progressDrawable = progress.getProgressDrawable();
+        if (progressDrawable != null) {
+            progressDrawable.setTint(0xffe30a17);
+        }
+
+        loadingLabel = new TextView(this);
+        loadingLabel.setText(LOADING_TEXT);
+        loadingLabel.setTextColor(Color.WHITE);
+        loadingLabel.setTextSize(18);
+        loadingLabel.setGravity(Gravity.CENTER);
+        loadingLabel.setBackgroundColor(0xcc090d14);
+        loadingLabel.setPadding(dp(24), dp(14), dp(24), dp(14));
 
         webView.setWebViewClient(Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                 ? new Api26SafePlayerClient() : new SafePlayerClient());
         webView.setWebChromeClient(new PlayerChromeClient());
         root.addView(webView, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        FrameLayout.LayoutParams labelParams = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        labelParams.gravity = Gravity.CENTER;
+        root.addView(loadingLabel, labelParams);
+
         FrameLayout.LayoutParams progressParams = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(5));
-        progressParams.gravity = android.view.Gravity.TOP;
+        progressParams.gravity = Gravity.TOP;
         root.addView(progress, progressParams);
         setContentView(root);
-
-        setTitle(channelName == null ? getString(R.string.app_name) : channelName);
-        webView.loadUrl(url);
         webView.requestFocus();
+    }
+
+    private void resolveAndLoad(String url) {
+        showLoading(true);
+        if (!isCanliTvPlayerWrapper(url)) {
+            loadTrustedUrl(url);
+            return;
+        }
+        resolverExecutor.execute(() -> {
+            String resolved = ChannelRepository.resolveWebPlayerUrl(url, fallbackUrl);
+            mainHandler.post(() -> {
+                if (destroyed || isFinishing()) {
+                    return;
+                }
+                if (isAllowedTopLevelUrl(resolved) && !url.equals(resolved)) {
+                    loadTrustedUrl(resolved);
+                } else {
+                    sourceWrapperAttempted = true;
+                    AppDiagnostics.record(this, "web/resolve",
+                            "Doğrudan yayın hedefi bulunamadı; kaynak sayfa deneniyor");
+                    loadTrustedUrl(url);
+                }
+            });
+        });
+    }
+
+    private void loadTrustedUrl(String url) {
+        if (destroyed || isFinishing() || webView == null || !isAllowedTopLevelUrl(url)) {
+            return;
+        }
+        try {
+            currentUrl = url;
+            showLoading(true);
+            Map<String, String> headers = new HashMap<>();
+            String referer = isAllowedTopLevelUrl(sourceUrl) ? sourceUrl : fallbackUrl;
+            if (referer != null && !referer.equals(url)) {
+                headers.put("Referer", referer);
+            }
+            webView.loadUrl(url, headers);
+            webView.requestFocus();
+        } catch (Throwable failure) {
+            AppDiagnostics.record(this, "web/load", failure);
+            handleMainFrameFailure(url);
+        }
     }
 
     private class SafePlayerClient extends WebViewClient {
         @Override
         public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-            Uri uri = request.getUrl();
-            if (!request.isForMainFrame()) {
+            Uri uri = request == null ? null : request.getUrl();
+            if (request != null && !request.isForMainFrame()) {
                 return !isSafeEmbeddedUrl(uri);
             }
-            if (isAllowedTopLevelUrl(uri == null ? null : uri.toString())) {
+            String url = uri == null ? null : uri.toString();
+            if (isAllowedTopLevelUrl(url)) {
+                currentUrl = url;
                 return false;
             }
-            handleMainFrameFailure(uri == null ? null : uri.toString());
+            handleMainFrameFailure(url);
             return true;
         }
 
@@ -162,45 +257,59 @@ public final class WebPlayerActivity extends AppCompatActivity {
         @Override
         public boolean shouldOverrideUrlLoading(WebView view, String url) {
             if (isAllowedTopLevelUrl(url)) {
+                currentUrl = url;
                 return false;
             }
-            handleMainFrameFailure(url);
+            // Android 6 does not identify sub-frame navigations here. Block unknown targets
+            // without treating an advertisement iframe as a failure of the channel itself.
             return true;
         }
 
         @Override
         public void onPageStarted(WebView view, String url, Bitmap favicon) {
-            progress.setVisibility(View.VISIBLE);
+            if (!isActive(view)) {
+                return;
+            }
+            currentUrl = url;
+            showLoading(true);
         }
 
         @Override
         public void onPageFinished(WebView view, String url) {
-            progress.setVisibility(View.GONE);
-            view.evaluateJavascript(
-                    "(function(){document.querySelectorAll('video').forEach(function(v){"
-                            + "v.setAttribute('playsinline','');v.play().catch(function(){});});})();",
-                    null);
+            if (!isActive(view)) {
+                return;
+            }
+            currentUrl = url;
+            runPlaybackRecovery(view, 0L);
+            runPlaybackRecovery(view, 1200L);
+            runPlaybackRecovery(view, 4000L);
+            mainHandler.postDelayed(() -> showLoading(false), 900L);
         }
 
         @Override
         public void onReceivedError(WebView view, WebResourceRequest request,
                                     WebResourceError error) {
-            if (request.isForMainFrame()) {
-                handleMainFrameFailure(request.getUrl().toString());
+            if (request != null && request.isForMainFrame()) {
+                handleMainFrameFailure(request.getUrl() == null
+                        ? null : request.getUrl().toString());
             }
         }
 
         @Override
         public void onReceivedHttpError(WebView view, WebResourceRequest request,
                                         WebResourceResponse errorResponse) {
-            if (request.isForMainFrame() && errorResponse.getStatusCode() >= 400) {
-                handleMainFrameFailure(request.getUrl().toString());
+            if (request != null && request.isForMainFrame() && errorResponse != null
+                    && errorResponse.getStatusCode() >= 400) {
+                handleMainFrameFailure(request.getUrl() == null
+                        ? null : request.getUrl().toString());
             }
         }
 
         @Override
         public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error) {
-            handler.cancel();
+            if (handler != null) {
+                handler.cancel();
+            }
             String failedUrl = error == null ? null : error.getUrl();
             if (isCurrentPage(failedUrl, view == null ? null : view.getUrl())) {
                 handleMainFrameFailure(failedUrl);
@@ -209,7 +318,6 @@ public final class WebPlayerActivity extends AppCompatActivity {
                         failedUrl == null ? "Bilinmeyen alt kaynak" : failedUrl);
             }
         }
-
     }
 
     @android.annotation.TargetApi(Build.VERSION_CODES.O)
@@ -217,57 +325,84 @@ public final class WebPlayerActivity extends AppCompatActivity {
         @Override
         public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
             AppDiagnostics.record(WebPlayerActivity.this, "web/renderer",
-                    "didCrash=" + detail.didCrash() + ", priority="
-                            + detail.rendererPriorityAtExit());
-            setResult(RESULT_CANCELED,
-                    new Intent().putExtra(EXTRA_PLAYBACK_FAILED, true));
-            if (webView != null) {
-                root.removeView(webView);
-                webView.destroy();
-                webView = null;
-            }
-            finish();
+                    "didCrash=" + (detail != null && detail.didCrash()) + ", priority="
+                            + (detail == null ? "unknown" : detail.rendererPriorityAtExit()));
+            destroyWebViewSafely();
+            finishWithPlaybackFailure("web/renderer", "Yayın görüntüsü yeniden başlatılamadı");
             return true;
         }
     }
 
+    private void runPlaybackRecovery(WebView view, long delayMs) {
+        mainHandler.postDelayed(() -> {
+            if (!isActive(view)) {
+                return;
+            }
+            try {
+                playbackRecoveryCount++;
+                view.evaluateJavascript(PLAYBACK_RECOVERY_SCRIPT, null);
+            } catch (Throwable failure) {
+                AppDiagnostics.record(this, "web/recovery", failure);
+            }
+        }, delayMs);
+    }
+
     private void handleMainFrameFailure(String failedUrl) {
+        if (destroyed || isFinishing()) {
+            return;
+        }
         AppDiagnostics.record(this, "web/main-frame",
                 failedUrl == null ? "Bilinmeyen adres" : failedUrl);
+        if (!sourceWrapperAttempted && isAllowedTopLevelUrl(sourceUrl)
+                && (failedUrl == null || !sourceUrl.equals(failedUrl))) {
+            sourceWrapperAttempted = true;
+            stopLoadingSafely();
+            loadTrustedUrl(sourceUrl);
+            return;
+        }
         if (!fallbackAttempted && fallbackUrl != null
                 && (failedUrl == null || !fallbackUrl.equals(failedUrl))) {
             fallbackAttempted = true;
-            Toast.makeText(this, "Alternatif kanal sayfası deneniyor",
-                    Toast.LENGTH_SHORT).show();
-            webView.stopLoading();
-            webView.loadUrl(fallbackUrl);
+            stopLoadingSafely();
+            loadTrustedUrl(fallbackUrl);
             return;
         }
         if (fallbackAttempted && failedUrl != null && !fallbackUrl.equals(failedUrl)) {
             return;
         }
-        Toast.makeText(this, "Yayın şu anda yanıt vermiyor; kanal listede tutuldu",
-                Toast.LENGTH_LONG).show();
-        setResult(RESULT_CANCELED, new Intent().putExtra(EXTRA_PLAYBACK_FAILED, true));
-        finish();
+        finishWithPlaybackFailure("web/main-frame",
+                "Yayın şu anda yanıt vermiyor; kanal listede tutuldu");
     }
 
     private final class PlayerChromeClient extends WebChromeClient {
         @Override
         public void onProgressChanged(WebView view, int newProgress) {
+            if (progress == null || destroyed) {
+                return;
+            }
             progress.setProgress(newProgress);
             progress.setVisibility(newProgress >= 100 ? View.GONE : View.VISIBLE);
         }
 
         @Override
         public void onPermissionRequest(PermissionRequest request) {
-            request.deny();
+            if (request != null) {
+                request.deny();
+            }
         }
 
         @Override
         public void onShowCustomView(View view, CustomViewCallback callback) {
+            if (destroyed || root == null || webView == null) {
+                if (callback != null) {
+                    callback.onCustomViewHidden();
+                }
+                return;
+            }
             if (customView != null) {
-                callback.onCustomViewHidden();
+                if (callback != null) {
+                    callback.onCustomViewHidden();
+                }
                 return;
             }
             customView = view;
@@ -284,18 +419,37 @@ public final class WebPlayerActivity extends AppCompatActivity {
         }
     }
 
+    private void showLoading(boolean visible) {
+        if (loadingLabel != null) {
+            loadingLabel.setVisibility(visible ? View.VISIBLE : View.GONE);
+        }
+        if (progress != null && visible) {
+            progress.setVisibility(View.VISIBLE);
+        }
+    }
+
     private void hideCustomView() {
         if (customView == null) {
             return;
         }
-        root.removeView(customView);
+        if (root != null) {
+            root.removeView(customView);
+        }
         customView = null;
-        webView.setVisibility(View.VISIBLE);
+        if (webView != null) {
+            webView.setVisibility(View.VISIBLE);
+        }
         if (customViewCallback != null) {
-            customViewCallback.onCustomViewHidden();
+            try {
+                customViewCallback.onCustomViewHidden();
+            } catch (RuntimeException ignored) {
+                // Some vendor WebView versions call this callback more than once.
+            }
             customViewCallback = null;
         }
-        webView.requestFocus();
+        if (webView != null) {
+            webView.requestFocus();
+        }
     }
 
     static boolean isAllowedTopLevelUrl(String value) {
@@ -326,6 +480,20 @@ public final class WebPlayerActivity extends AppCompatActivity {
                 || host.endsWith(".maksnet.tv") || "maksnet.tv".equals(host);
     }
 
+    private static boolean isCanliTvPlayerWrapper(String value) {
+        try {
+            Uri uri = Uri.parse(value);
+            String host = uri.getHost();
+            String path = uri.getPath();
+            return host != null && path != null
+                    && ("canlitv.diy".equalsIgnoreCase(host)
+                    || "www.canlitv.diy".equalsIgnoreCase(host))
+                    && path.toLowerCase(Locale.ROOT).contains("/player/index.php");
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
     private static boolean isCurrentPage(String first, String second) {
         try {
             Uri firstUri = Uri.parse(first);
@@ -348,7 +516,34 @@ public final class WebPlayerActivity extends AppCompatActivity {
                 || "blob".equals(scheme) || "about".equals(scheme);
     }
 
+    private boolean isActive(WebView view) {
+        return !destroyed && !isFinishing() && view != null && view == webView;
+    }
+
+    private void stopLoadingSafely() {
+        if (webView != null) {
+            try {
+                webView.stopLoading();
+            } catch (RuntimeException ignored) {
+                // Renderer may already be shutting down.
+            }
+        }
+    }
+
+    private void finishWithPlaybackFailure(String area, String message) {
+        AppDiagnostics.record(this, area, message);
+        if (!isFinishing()) {
+            Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+            setResult(RESULT_CANCELED,
+                    new Intent().putExtra(EXTRA_PLAYBACK_FAILED, true));
+            finish();
+        }
+    }
+
     private void enterImmersiveMode() {
+        if (getWindow() == null) {
+            return;
+        }
         getWindow().getDecorView().setSystemUiVisibility(
                 View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
                         | View.SYSTEM_UI_FLAG_FULLSCREEN
@@ -362,6 +557,14 @@ public final class WebPlayerActivity extends AppCompatActivity {
         return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
+    int playbackRecoveryCountForTest() {
+        return playbackRecoveryCount;
+    }
+
+    String currentPlayerUrlForTest() {
+        return currentUrl;
+    }
+
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
         if (event.getAction() == KeyEvent.ACTION_DOWN) {
@@ -373,16 +576,15 @@ public final class WebPlayerActivity extends AppCompatActivity {
                 finishForChannelChange(-1);
                 return true;
             }
-        }
-        if (event.getAction() == KeyEvent.ACTION_DOWN
-                && event.getKeyCode() == KeyEvent.KEYCODE_BACK) {
-            if (customView != null) {
-                hideCustomView();
-                return true;
-            }
-            if (webView != null && webView.canGoBack()) {
-                webView.goBack();
-                return true;
+            if (event.getKeyCode() == KeyEvent.KEYCODE_BACK) {
+                if (customView != null) {
+                    hideCustomView();
+                    return true;
+                }
+                if (webView != null && webView.canGoBack()) {
+                    webView.goBack();
+                    return true;
+                }
             }
         }
         return super.dispatchKeyEvent(event);
@@ -434,23 +636,41 @@ public final class WebPlayerActivity extends AppCompatActivity {
         if (progress != null) {
             progress.setVisibility(inPictureInPictureMode ? View.GONE : View.VISIBLE);
         }
+        if (loadingLabel != null && inPictureInPictureMode) {
+            loadingLabel.setVisibility(View.GONE);
+        }
         if (!inPictureInPictureMode) {
             enterImmersiveMode();
         }
     }
 
+    private void destroyWebViewSafely() {
+        WebView view = webView;
+        webView = null;
+        if (view == null) {
+            return;
+        }
+        try {
+            if (root != null) {
+                root.removeView(view);
+            }
+            view.stopLoading();
+            view.setWebChromeClient(null);
+            view.setWebViewClient(null);
+            view.removeAllViews();
+            view.destroy();
+        } catch (Throwable ignored) {
+            // A dead vendor WebView renderer can throw during any cleanup operation.
+        }
+    }
+
     @Override
     protected void onDestroy() {
-        if (webView != null) {
-            hideCustomView();
-            webView.stopLoading();
-            webView.loadUrl("about:blank");
-            webView.setWebChromeClient(null);
-            webView.setWebViewClient(null);
-            webView.removeAllViews();
-            webView.destroy();
-            webView = null;
-        }
+        destroyed = true;
+        mainHandler.removeCallbacksAndMessages(null);
+        resolverExecutor.shutdownNow();
+        hideCustomView();
+        destroyWebViewSafely();
         super.onDestroy();
     }
 }
