@@ -12,6 +12,16 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr-TR/1.1.0/) yaklaşımın
 - Yapılandırılmış bug report ve feature request formları
 - Pull request şablonu
 
+## [3.6.1] - 2026-07-22
+
+### Fixed
+
+- Tarayıcı veya YouTube uygulaması yüklü olmayan Android TV cihazlarında alternatif yayınların
+  `Bu işlevi işleyecek uygulama yok` hatasıyla kapanması
+- YouTube ve resmî yayın hedeflerinin reklamlı kaynak sarmalayıcı yerine doğrudan uygulama içi
+  güvenli oynatıcıda açılması
+- Korumalı medya isteyen resmî yayınların WebView izin isteğinin tamamen reddedilmesi
+
 ## [3.6.0] - 2026-07-22
 
 ### Changed
@@ -257,7 +267,8 @@ Bu kayıt `app/build.gradle` içindeki `versionName` ve repository commit geçmi
 
 Yeni bir release yayımlanırken tarih, karşılaştırma bağlantıları ve migration notları bu dosyaya eklenmelidir.
 
-[Unreleased]: https://github.com/KayaJR356/Turkey-TV/compare/v3.6.0...HEAD
+[Unreleased]: https://github.com/KayaJR356/Turkey-TV/compare/v3.6.1...HEAD
+[3.6.1]: https://github.com/KayaJR356/Turkey-TV/releases/tag/v3.6.1
 [3.6.0]: https://github.com/KayaJR356/Turkey-TV/releases/tag/v3.6.0
 [3.5.3]: https://github.com/KayaJR356/Turkey-TV/releases/tag/v3.5.3
 [3.5.2]: https://github.com/KayaJR356/Turkey-TV/releases/tag/v3.5.2

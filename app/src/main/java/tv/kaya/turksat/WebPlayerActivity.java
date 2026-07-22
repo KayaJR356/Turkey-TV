@@ -88,6 +88,7 @@ public final class WebPlayerActivity extends AppCompatActivity {
     private String sourceUrl;
     private String fallbackUrl;
     private String channelName;
+    private String trustedSessionHost;
     private String currentUrl;
     private boolean fallbackAttempted;
     private boolean destroyed;
@@ -129,6 +130,7 @@ public final class WebPlayerActivity extends AppCompatActivity {
             finishWithPlaybackFailure("web/invalid-url", "Güvenli kanal adresi bulunamadı");
             return;
         }
+        trustedSessionHost = hostOf(sourceUrl);
 
         try {
             initializePlayerUi();
@@ -217,9 +219,10 @@ public final class WebPlayerActivity extends AppCompatActivity {
     private void resolveAndLoad(String url) {
         showLoading(true);
         if (!isCanliTvPlayerWrapper(url)) {
-            if (!launchExternalPlayback(url)) {
-                finishWithPlaybackFailure("external/unavailable",
-                        "Bu yayın için cihazda uygun uygulama bulunamadı");
+            if (isPlayableMediaUrl(url)) {
+                startNativePlayback(url);
+            } else {
+                loadTrustedUrl(url);
             }
             return;
         }
@@ -235,11 +238,11 @@ public final class WebPlayerActivity extends AppCompatActivity {
                         ? resolved : ChannelRepository.extractNestedMediaUrl(resolved);
                 if (directMedia != null) {
                     startNativePlayback(directMedia);
-                } else if (isSafePlaybackUrl(resolved) && !url.equals(resolved)
-                        && launchExternalPlayback(resolved)) {
-                    return;
-                } else if (fallbackUrl != null && launchExternalPlayback(fallbackUrl)) {
-                    return;
+                } else if (isSafePlaybackUrl(resolved) && !url.equals(resolved)) {
+                    trustedSessionHost = hostOf(resolved);
+                    loadTrustedUrl(resolved);
+                } else if (fallbackUrl != null) {
+                    loadTrustedUrl(fallbackUrl);
                 } else {
                     finishWithPlaybackFailure("web/resolve",
                             "Yayın sağlayıcısı geçerli bir bağlantı göndermedi");
@@ -248,98 +251,68 @@ public final class WebPlayerActivity extends AppCompatActivity {
         });
     }
 
-    private boolean launchExternalPlayback(String value) {
-        if (!isSafeExternalUrl(value) || destroyed || isFinishing()) {
-            return false;
-        }
-        Uri uri = externalPlaybackUri(value);
-        if (uri == null) {
-            return false;
-        }
-        if (isYouTubeUrl(uri)) {
-            String[] packages = {"com.google.android.youtube.tv", "com.google.android.youtube"};
-            for (String packageName : packages) {
-                try {
-                    Intent youtube = new Intent(Intent.ACTION_VIEW, uri)
-                            .setPackage(packageName)
-                            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
-                    startActivity(youtube);
-                    finishAfterExternalLaunch();
-                    return true;
-                } catch (RuntimeException ignored) {
-                    // Try the next installed YouTube/browser handler.
-                }
-            }
-        }
-        try {
-            Intent browser = new Intent(Intent.ACTION_VIEW, uri)
-                    .addCategory(Intent.CATEGORY_BROWSABLE)
-                    .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
-            startActivity(browser);
-            finishAfterExternalLaunch();
-            return true;
-        } catch (RuntimeException ignored) {
-            return false;
-        }
-    }
-
-    private void finishAfterExternalLaunch() {
-        setResult(RESULT_OK);
-        finish();
-    }
-
-    private static Uri externalPlaybackUri(String value) {
-        try {
-            Uri uri = Uri.parse(value);
-            String host = uri.getHost();
-            if (host != null && ("youtube.com".equalsIgnoreCase(host)
-                    || "www.youtube.com".equalsIgnoreCase(host)
-                    || "youtube-nocookie.com".equalsIgnoreCase(host)
-                    || "www.youtube-nocookie.com".equalsIgnoreCase(host))) {
-                String path = uri.getPath();
-                if (path != null && path.startsWith("/embed/")) {
-                    String videoId = path.substring("/embed/".length()).split("/")[0];
-                    if (!videoId.isEmpty()) {
-                        return Uri.parse("https://www.youtube.com/watch?v=" + videoId);
-                    }
-                }
-            }
-            return uri;
-        } catch (Exception ignored) {
-            return null;
-        }
-    }
-
-    private static boolean isYouTubeUrl(Uri uri) {
-        String host = uri == null ? null : uri.getHost();
-        if (host == null) {
-            return false;
-        }
-        host = host.toLowerCase(Locale.ROOT);
-        return "youtu.be".equals(host) || "youtube.com".equals(host)
-                || host.endsWith(".youtube.com") || "youtube-nocookie.com".equals(host)
-                || host.endsWith(".youtube-nocookie.com");
-    }
-
     private void loadTrustedUrl(String url) {
-        if (destroyed || isFinishing() || !isAllowedTopLevelUrl(url)) {
+        String targetUrl = internalPlaybackUrl(url);
+        if (destroyed || isFinishing() || !isAllowedForSession(targetUrl)) {
             return;
         }
         try {
             releaseNativePlayer();
             ensureWebView();
-            currentUrl = url;
+            currentUrl = targetUrl;
             showLoading(true);
             Map<String, String> headers = new HashMap<>();
-            String referer = isAllowedTopLevelUrl(sourceUrl) ? sourceUrl : fallbackUrl;
-            if (referer != null && !referer.equals(url)) {
+            String referer = isAllowedForSession(sourceUrl) ? sourceUrl : fallbackUrl;
+            if (referer != null && !referer.equals(targetUrl)) {
                 headers.put("Referer", referer);
             }
-            webView.loadUrl(url, headers);
+            webView.loadUrl(targetUrl, headers);
             webView.requestFocus();
         } catch (Throwable failure) {
             AppDiagnostics.record(this, "web/load", failure);
-            handleMainFrameFailure(url);
+            handleMainFrameFailure(targetUrl);
+        }
+    }
+
+    private static String internalPlaybackUrl(String value) {
+        try {
+            Uri uri = Uri.parse(value);
+            String host = uri.getHost();
+            if (host == null) {
+                return value;
+            }
+            host = host.toLowerCase(Locale.ROOT);
+            boolean youtube = "youtu.be".equals(host) || "youtube.com".equals(host)
+                    || host.endsWith(".youtube.com") || "youtube-nocookie.com".equals(host)
+                    || host.endsWith(".youtube-nocookie.com");
+            if (!youtube) {
+                return value;
+            }
+            String videoId = null;
+            String path = uri.getPath();
+            if ("youtu.be".equals(host) && path != null && path.length() > 1) {
+                videoId = path.substring(1).split("/")[0];
+            } else if (path != null && path.startsWith("/embed/")) {
+                videoId = path.substring("/embed/".length()).split("/")[0];
+            } else {
+                videoId = uri.getQueryParameter("v");
+            }
+            if (videoId == null || !videoId.matches("[A-Za-z0-9_-]{6,20}")) {
+                return value;
+            }
+            return new Uri.Builder()
+                    .scheme("https")
+                    .authority("www.youtube.com")
+                    .appendPath("embed")
+                    .appendPath(videoId)
+                    .appendQueryParameter("autoplay", "1")
+                    .appendQueryParameter("controls", "1")
+                    .appendQueryParameter("playsinline", "1")
+                    .appendQueryParameter("rel", "0")
+                    .appendQueryParameter("fs", "1")
+                    .build().toString();
+        } catch (Exception ignored) {
+            return value;
         }
     }
 
@@ -429,7 +402,7 @@ public final class WebPlayerActivity extends AppCompatActivity {
                 return !isSafeEmbeddedUrl(uri);
             }
             String url = uri == null ? null : uri.toString();
-            if (isAllowedTopLevelUrl(url)) {
+            if (isAllowedForSession(url)) {
                 currentUrl = url;
                 return false;
             }
@@ -440,7 +413,7 @@ public final class WebPlayerActivity extends AppCompatActivity {
         @SuppressWarnings("deprecation")
         @Override
         public boolean shouldOverrideUrlLoading(WebView view, String url) {
-            if (isAllowedTopLevelUrl(url)) {
+            if (isAllowedForSession(url)) {
                 currentUrl = url;
                 return false;
             }
@@ -540,9 +513,9 @@ public final class WebPlayerActivity extends AppCompatActivity {
         if (!fallbackAttempted && fallbackUrl != null
                 && (failedUrl == null || !fallbackUrl.equals(failedUrl))) {
             fallbackAttempted = true;
-            if (launchExternalPlayback(fallbackUrl)) {
-                return;
-            }
+            stopLoadingSafely();
+            loadTrustedUrl(fallbackUrl);
+            return;
         }
         finishWithPlaybackFailure("web/main-frame",
                 "Yayın şu anda yanıt vermiyor; kanal listede tutuldu");
@@ -560,9 +533,16 @@ public final class WebPlayerActivity extends AppCompatActivity {
 
         @Override
         public void onPermissionRequest(PermissionRequest request) {
-            if (request != null) {
-                request.deny();
+            if (request == null) {
+                return;
             }
+            for (String resource : request.getResources()) {
+                if (PermissionRequest.RESOURCE_PROTECTED_MEDIA_ID.equals(resource)) {
+                    request.grant(new String[]{PermissionRequest.RESOURCE_PROTECTED_MEDIA_ID});
+                    return;
+                }
+            }
+            request.deny();
         }
 
         @Override
@@ -638,6 +618,26 @@ public final class WebPlayerActivity extends AppCompatActivity {
                     || isPlaybackProviderHost(host);
         } catch (Exception ignored) {
             return false;
+        }
+    }
+
+    private boolean isAllowedForSession(String value) {
+        if (isAllowedTopLevelUrl(value)) {
+            return true;
+        }
+        String host = hostOf(value);
+        return isSafeExternalUrl(value) && trustedSessionHost != null && host != null
+                && (host.equals(trustedSessionHost)
+                || host.endsWith("." + trustedSessionHost)
+                || trustedSessionHost.endsWith("." + host));
+    }
+
+    private static String hostOf(String value) {
+        try {
+            String host = Uri.parse(value).getHost();
+            return host == null ? null : host.toLowerCase(Locale.ROOT);
+        } catch (Exception ignored) {
+            return null;
         }
     }
 
