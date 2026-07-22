@@ -81,16 +81,17 @@ public final class StartupCatalogInstrumentedTest {
 
     @Test
     public void webPlayerAllowsKnownVideoProvidersButRejectsUnknownRedirects() {
-        assertTrue(WebPlayerActivity.isAllowedTopLevelUrl(
+        assertTrue("canlitv player should be allowed", WebPlayerActivity.isAllowedTopLevelUrl(
                 "https://www.canlitv.diy/player/index.php?id=1"));
-        assertTrue(WebPlayerActivity.isAllowedTopLevelUrl(
+        assertTrue("YouTube player should be allowed", WebPlayerActivity.isAllowedTopLevelUrl(
                 "https://www.youtube.com/embed/example"));
-        assertTrue(WebPlayerActivity.isAllowedTopLevelUrl(
+        assertTrue("Castr player should be allowed", WebPlayerActivity.isAllowedTopLevelUrl(
                 "https://player.castr.com/live_example"));
-        assertFalse(WebPlayerActivity.isAllowedTopLevelUrl(
+        assertFalse("unknown advertiser should be blocked", WebPlayerActivity.isAllowedTopLevelUrl(
                 "https://example.com/advertisement"));
-        assertFalse(WebPlayerActivity.isAllowedTopLevelUrl(
+        assertFalse("lookalike domain should be blocked", WebPlayerActivity.isAllowedTopLevelUrl(
                 "https://youtube.com.example.com/fake-player"));
-        assertFalse(WebPlayerActivity.isAllowedTopLevelUrl("http://www.youtube.com/watch?v=x"));
+        assertFalse("cleartext redirect should be blocked",
+                WebPlayerActivity.isAllowedTopLevelUrl("http://www.youtube.com/watch?v=x"));
     }
 }

@@ -322,6 +322,7 @@ public final class WebPlayerActivity extends AppCompatActivity {
                 || host.endsWith(".hipodrom.com") || "hipodrom.com".equals(host)
                 || host.endsWith(".yoltv.com") || "yoltv.com".equals(host)
                 || host.endsWith(".castr.net") || "castr.net".equals(host)
+                || host.endsWith(".castr.com") || "castr.com".equals(host)
                 || host.endsWith(".maksnet.tv") || "maksnet.tv".equals(host);
     }
 
