@@ -95,6 +95,7 @@ public final class MainActivity extends AppCompatActivity {
             "Spor", "Çocuk", "Belgesel", "Müzik", "Dini", "Yerel"
     };
     private static final long TOP_STATUS_VISIBLE_MS = 2_500L;
+    private static final int INITIAL_HEALTH_CHECK_LIMIT = 24;
     private static final String SITE_ORIGIN = "https://www.canlitv.diy";
     private static final String PLAYER_USER_AGENT =
             "Mozilla/5.0 (Linux; Android 12; Android TV) "
@@ -165,6 +166,7 @@ public final class MainActivity extends AppCompatActivity {
     private boolean waitingForManualStart;
     private boolean resumePlaybackOnStart;
     private boolean webFallbackOpen;
+    private boolean catalogStarted;
     private volatile boolean networkUnavailable;
     private String searchQuery = "";
     private String activeStreamUrl;
@@ -224,6 +226,7 @@ public final class MainActivity extends AppCompatActivity {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         enterImmersiveMode();
         buildUi();
+        showRecoveredCrash();
         registerNetworkMonitoring();
         loadChannels();
         appUpdateManager.checkForUpdates(false);
@@ -388,7 +391,12 @@ public final class MainActivity extends AppCompatActivity {
         player = new ExoPlayer.Builder(this)
                 .setMediaSourceFactory(new DefaultMediaSourceFactory(dataSourceFactory))
                 .build();
-        mediaSession = new MediaSession.Builder(this, player).build();
+        try {
+            mediaSession = new MediaSession.Builder(this, player).build();
+        } catch (RuntimeException | LinkageError compatibilityError) {
+            mediaSession = null;
+            AppDiagnostics.record(this, "startup/media-session", compatibilityError);
+        }
         playerView.setPlayer(player);
         applyTrackPreferences();
         player.addListener(new Player.Listener() {
@@ -646,6 +654,7 @@ public final class MainActivity extends AppCompatActivity {
             showSettingsPanel(false);
             appUpdateManager.checkForUpdates(true);
         }).setText("Uygulama güncellemesini denetle");
+        addSettingRow(this::showDiagnostics).setText("Son tanılama kaydını göster");
         addSettingRow(() -> Toast.makeText(this,
                 "Kırmızı: yenile  ·  Yeşil: ara  ·  Sarı: kanallar  ·  Mavi: ayarlar",
                 Toast.LENGTH_LONG).show()).setText("Kumanda tuş rehberi");
@@ -755,26 +764,33 @@ public final class MainActivity extends AppCompatActivity {
         if (player == null) {
             return;
         }
-        TrackSelectionParameters.Builder builder = player.getTrackSelectionParameters().buildUpon();
-        String quality = getSharedPreferences(PREFS, 0).getString(QUALITY_MODE_KEY, "auto");
-        if ("low".equals(quality)) {
-            builder.setMaxVideoSize(854, 480).setMaxVideoBitrate(1_800_000);
-        } else if ("medium".equals(quality)) {
-            builder.setMaxVideoSize(1280, 720).setMaxVideoBitrate(4_500_000);
-        } else if ("high".equals(quality)) {
-            builder.setMaxVideoSize(1920, 1080).setMaxVideoBitrate(10_000_000);
-        } else {
-            builder.setMaxVideoSize(Integer.MAX_VALUE, Integer.MAX_VALUE)
-                    .setMaxVideoBitrate(Integer.MAX_VALUE);
+        try {
+            TrackSelectionParameters.Builder builder =
+                    player.getTrackSelectionParameters().buildUpon();
+            String quality = getSharedPreferences(PREFS, 0)
+                    .getString(QUALITY_MODE_KEY, "auto");
+            if ("low".equals(quality)) {
+                builder.setMaxVideoSize(854, 480).setMaxVideoBitrate(1_800_000);
+            } else if ("medium".equals(quality)) {
+                builder.setMaxVideoSize(1280, 720).setMaxVideoBitrate(4_500_000);
+            } else if ("high".equals(quality)) {
+                builder.setMaxVideoSize(1920, 1080).setMaxVideoBitrate(10_000_000);
+            } else {
+                builder.setMaxVideoSize(Integer.MAX_VALUE, Integer.MAX_VALUE)
+                        .setMaxVideoBitrate(Integer.MAX_VALUE);
+            }
+            String audio = getSharedPreferences(PREFS, 0)
+                    .getString(AUDIO_LANGUAGE_KEY, "auto");
+            builder.setPreferredAudioLanguage("auto".equals(audio) ? null : audio);
+            String subtitle = getSharedPreferences(PREFS, 0)
+                    .getString(SUBTITLE_LANGUAGE_KEY, "off");
+            builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, "off".equals(subtitle));
+            builder.setPreferredTextLanguage("off".equals(subtitle) || "auto".equals(subtitle)
+                    ? null : subtitle);
+            player.setTrackSelectionParameters(builder.build());
+        } catch (RuntimeException | LinkageError compatibilityError) {
+            AppDiagnostics.record(this, "startup/track-preferences", compatibilityError);
         }
-        String audio = getSharedPreferences(PREFS, 0).getString(AUDIO_LANGUAGE_KEY, "auto");
-        builder.setPreferredAudioLanguage("auto".equals(audio) ? null : audio);
-        String subtitle = getSharedPreferences(PREFS, 0)
-                .getString(SUBTITLE_LANGUAGE_KEY, "off");
-        builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, "off".equals(subtitle));
-        builder.setPreferredTextLanguage("off".equals(subtitle) || "auto".equals(subtitle)
-                ? null : subtitle);
-        player.setTrackSelectionParameters(builder.build());
     }
 
     private void showAudioLanguageDialog() {
@@ -1085,27 +1101,79 @@ public final class MainActivity extends AppCompatActivity {
         int sweepGeneration = ++healthSweepGeneration;
         showLoading("Kanallar hazırlanıyor…");
         new Thread(() -> {
-            List<Channel> loaded = ChannelRepository.load(this);
-            runOnUiThread(() -> {
-                channels.clear();
-                channels.addAll(loaded);
-                resolvedStreams.clear();
-                channelStatuses.clear();
-                for (Channel channel : channels) {
-                    channelStatuses.put(channel.number, ChannelStatus.CHECKING);
-                }
-                searchQuery = "";
-                rebuildChannelList();
+            try {
+                List<Channel> local = ChannelRepository.load(getApplicationContext());
+                runOnUiThread(() -> applyCatalog(local, sweepGeneration, true));
 
-                if (channels.isEmpty()) {
-                    showPlaybackError("Kanal listesi alınamadı");
-                    return;
+                List<Channel> online = ChannelRepository.refresh(getApplicationContext());
+                if (!online.isEmpty()) {
+                    runOnUiThread(() -> applyCatalog(online, sweepGeneration, false));
                 }
-                startAfterCatalogLoad();
-                refreshEpg(false);
-                uiHandler.postDelayed(() -> startChannelHealthSweep(sweepGeneration), 4_000L);
-            });
+            } catch (RuntimeException | LinkageError error) {
+                AppDiagnostics.record(getApplicationContext(), "catalog/load", error);
+                runOnUiThread(() -> showPlaybackError(
+                        "Kanal listesi hazırlanamadı; uygulamayı yeniden deneyin"));
+            }
         }, "channel-catalog").start();
+    }
+
+    private void applyCatalog(List<Channel> loaded, int sweepGeneration, boolean allowStartup) {
+        if (isFinishing() || isDestroyed() || loaded == null || loaded.isEmpty()) {
+            if (allowStartup && !catalogStarted) {
+                showPlaybackError("Kanal listesi alınamadı");
+            }
+            return;
+        }
+        if (!channels.isEmpty() && sameCatalog(channels, loaded)) {
+            return;
+        }
+
+        int previousNumber = channels.isEmpty() || currentIndex < 0 || currentIndex >= channels.size()
+                ? 1 : channels.get(currentIndex).number;
+        String previousKey = channels.isEmpty() || currentIndex < 0 || currentIndex >= channels.size()
+                ? "" : channels.get(currentIndex).key();
+        channels.clear();
+        channels.addAll(loaded);
+        int matchingIndex = findChannelIndexByKey(previousKey);
+        currentIndex = matchingIndex >= 0 ? matchingIndex : findChannelIndex(previousNumber);
+        resolvedStreams.clear();
+        failedStreams.clear();
+        channelStatuses.clear();
+        for (Channel channel : channels) {
+            channelStatuses.put(channel.number, ChannelStatus.CHECKING);
+        }
+        searchQuery = "";
+        rebuildChannelList();
+
+        if (!catalogStarted && allowStartup) {
+            catalogStarted = true;
+            startAfterCatalogLoad();
+            refreshEpg(false);
+            uiHandler.postDelayed(() -> startChannelHealthSweep(sweepGeneration), 4_000L);
+        } else if (!channels.isEmpty()) {
+            updateNowPlaying(channels.get(currentIndex));
+            refreshSettingLabels();
+        }
+    }
+
+    private boolean sameCatalog(List<Channel> current, List<Channel> replacement) {
+        if (current.size() != replacement.size()) {
+            return false;
+        }
+        for (int index = 0; index < current.size(); index++) {
+            Channel left = current.get(index);
+            Channel right = replacement.get(index);
+            if (!left.name.equals(right.name) || !left.pageUrl.equals(right.pageUrl)
+                    || !left.playbackUrl.equals(right.playbackUrl)
+                    || !left.sourceCategory.equals(right.sourceCategory)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    int loadedChannelCountForTest() {
+        return channels.size();
     }
 
     private void rebuildChannelList() {
@@ -1610,7 +1678,11 @@ public final class MainActivity extends AppCompatActivity {
             return;
         }
         List<Channel> snapshot = new ArrayList<>(channels);
+        int scheduled = 0;
         for (Channel channel : snapshot) {
+            if (scheduled++ >= INITIAL_HEALTH_CHECK_LIMIT) {
+                break;
+            }
             if (resolvedStreams.containsKey(channel.number)) {
                 continue;
             }
@@ -1639,6 +1711,36 @@ public final class MainActivity extends AppCompatActivity {
                 }
             });
         }
+    }
+
+    private void showRecoveredCrash() {
+        String report = AppDiagnostics.consumeLastCrash(this);
+        if (report.isEmpty()) {
+            return;
+        }
+        String summary = report.length() > 1_200 ? report.substring(0, 1_200) + "…" : report;
+        uiHandler.post(() -> {
+            if (!isFinishing() && !isDestroyed()) {
+                new AlertDialog.Builder(this)
+                        .setTitle("Önceki hata kurtarıldı")
+                        .setMessage("Uygulama güvenli biçimde yeniden açıldı. Tanılama kaydı:\n\n"
+                                + summary)
+                        .setPositiveButton("Kapat", null)
+                        .show();
+            }
+        });
+    }
+
+    private void showDiagnostics() {
+        String report = AppDiagnostics.latestEvent(this);
+        String message = report.isEmpty()
+                ? "Kaydedilmiş bir uygulama veya katalog hatası yok."
+                : report.length() > 2_500 ? report.substring(0, 2_500) + "…" : report;
+        new AlertDialog.Builder(this)
+                .setTitle("Tanılama kaydı")
+                .setMessage(message)
+                .setPositiveButton("Kapat", null)
+                .show();
     }
 
     private boolean isPlayableStream(String url) {
@@ -1934,6 +2036,18 @@ public final class MainActivity extends AppCompatActivity {
         for (int i = 0; i < channels.size(); i++) {
             if (channels.get(i).number == number) {
                 return i;
+            }
+        }
+        return -1;
+    }
+
+    private int findChannelIndexByKey(String key) {
+        if (key == null || key.isEmpty()) {
+            return -1;
+        }
+        for (int index = 0; index < channels.size(); index++) {
+            if (key.equals(channels.get(index).key())) {
+                return index;
             }
         }
         return -1;

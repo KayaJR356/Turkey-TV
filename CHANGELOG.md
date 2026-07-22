@@ -12,6 +12,27 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr-TR/1.1.0/) yaklaşımın
 - Yapılandırılmış bug report ve feature request formları
 - Pull request şablonu
 
+## [3.5.1] - 2026-07-22
+
+### Added
+
+- APK içine gömülü, internet ve önbellekten bağımsız 285 kanallık başlangıç kataloğu
+- API 23 emülatöründe gerçek MainActivity açılışı ve gömülü katalog enstrümantasyon testleri
+- Yakalanmayan çökmeleri ve katalog hatalarını cihazda saklayan tanılama kaydı
+- Ayarlar panelinde son tanılama kaydını görüntüleme
+
+### Changed
+
+- Uygulama önce yerel/gömülü kataloğu anında açıyor, canlı kataloğu arka planda yeniliyor
+- İlk açılıştaki ağır yayın sağlık taraması 285 yerine ilk 24 kanalla sınırlandı
+- Canlı katalog yenilenirken seçili kanal adı ve oynatma oturumu korunuyor
+
+### Fixed
+
+- Ağ veya bozuk önbellek durumunda kanal listesinin boş kalması
+- Bazı üretici Android TV yazılımlarında MediaSession başlatma hatasının tüm uygulamayı düşürmesi
+- Katalog indirme/ayrıştırma hatalarının hiçbir tanılama izi bırakmadan sessizce yutulması
+
 ## [3.5.0] - 2026-07-21
 
 ### Added
@@ -162,7 +183,8 @@ Bu kayıt `app/build.gradle` içindeki `versionName` ve repository commit geçmi
 
 Yeni bir release yayımlanırken tarih, karşılaştırma bağlantıları ve migration notları bu dosyaya eklenmelidir.
 
-[Unreleased]: https://github.com/KayaJR356/Turkey-TV/compare/v3.5.0...HEAD
+[Unreleased]: https://github.com/KayaJR356/Turkey-TV/compare/v3.5.1...HEAD
+[3.5.1]: https://github.com/KayaJR356/Turkey-TV/releases/tag/v3.5.1
 [3.5.0]: https://github.com/KayaJR356/Turkey-TV/releases/tag/v3.5.0
 [3.4.0]: https://github.com/KayaJR356/Turkey-TV/releases/tag/v3.4.0
 [3.3.0]: https://github.com/KayaJR356/Turkey-TV/releases/tag/v3.3.0
