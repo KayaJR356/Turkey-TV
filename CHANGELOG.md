@@ -12,6 +12,27 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr-TR/1.1.0/) yaklaşımın
 - Yapılandırılmış bug report ve feature request formları
 - Pull request şablonu
 
+## [3.5.3] - 2026-07-22
+
+### Changed
+
+- Kaynak sayfanın içindeki HLS adresi bulunan alternatif kanallar eski WebView yerine Media3 ile
+  doğrudan oynatılıyor
+- WebView yalnızca YouTube ve dış sağlayıcı gibi gerçekten tarayıcı gerektiren yayınlarda tembel
+  olarak oluşturuluyor
+
+### Fixed
+
+- Android 6 ve bazı üretici TV yazılımlarında HTML5/HLS başlatılırken WebView sürecinin yerel
+  olarak çökmesi
+- Emülatörün fiziksel `MENU` olayını uygulamaya iletmemesi nedeniyle hatalı sonuç veren kanal
+  paneli kumanda testi
+
+### Tests
+
+- İç oynatıcı URL'sinden güvenli HLS çıkarma birim testi
+- API 23 emülatöründe WebView oluşturmadan gerçek alternatif kanalın Media3 yoluna geçiş testi
+
 ## [3.5.2] - 2026-07-22
 
 ### Changed
@@ -214,7 +235,8 @@ Bu kayıt `app/build.gradle` içindeki `versionName` ve repository commit geçmi
 
 Yeni bir release yayımlanırken tarih, karşılaştırma bağlantıları ve migration notları bu dosyaya eklenmelidir.
 
-[Unreleased]: https://github.com/KayaJR356/Turkey-TV/compare/v3.5.2...HEAD
+[Unreleased]: https://github.com/KayaJR356/Turkey-TV/compare/v3.5.3...HEAD
+[3.5.3]: https://github.com/KayaJR356/Turkey-TV/releases/tag/v3.5.3
 [3.5.2]: https://github.com/KayaJR356/Turkey-TV/releases/tag/v3.5.2
 [3.5.1]: https://github.com/KayaJR356/Turkey-TV/releases/tag/v3.5.1
 [3.5.0]: https://github.com/KayaJR356/Turkey-TV/releases/tag/v3.5.0

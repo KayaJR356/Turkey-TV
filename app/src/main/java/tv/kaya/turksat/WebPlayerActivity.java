@@ -38,6 +38,14 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.media3.common.MediaItem;
+import androidx.media3.common.PlaybackException;
+import androidx.media3.common.Player;
+import androidx.media3.common.util.UnstableApi;
+import androidx.media3.datasource.DefaultHttpDataSource;
+import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
+import androidx.media3.ui.PlayerView;
 
 import java.util.HashMap;
 import java.util.Locale;
@@ -45,6 +53,7 @@ import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+@UnstableApi
 public final class WebPlayerActivity extends AppCompatActivity {
     private static final String EXTRA_URL = "channel_web_url";
     private static final String EXTRA_FALLBACK_URL = "channel_fallback_url";
@@ -70,6 +79,8 @@ public final class WebPlayerActivity extends AppCompatActivity {
 
     private FrameLayout root;
     private WebView webView;
+    private PlayerView nativePlayerView;
+    private ExoPlayer nativePlayer;
     private ProgressBar progress;
     private TextView loadingLabel;
     private View customView;
@@ -80,6 +91,7 @@ public final class WebPlayerActivity extends AppCompatActivity {
     private boolean sourceWrapperAttempted;
     private boolean fallbackAttempted;
     private boolean destroyed;
+    private boolean nativePlaybackStarted;
     private int playbackRecoveryCount;
 
     static Intent createIntent(Context context, Channel channel) {
@@ -123,13 +135,45 @@ public final class WebPlayerActivity extends AppCompatActivity {
         }
     }
 
-    @SuppressLint("SetJavaScriptEnabled")
     private void initializePlayerUi() {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         enterImmersiveMode();
         root = new FrameLayout(this);
         root.setBackgroundColor(Color.BLACK);
 
+        progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        progress.setIndeterminate(false);
+        progress.setMax(100);
+        Drawable progressDrawable = progress.getProgressDrawable();
+        if (progressDrawable != null) {
+            progressDrawable.setTint(0xffe30a17);
+        }
+
+        loadingLabel = new TextView(this);
+        loadingLabel.setText(LOADING_TEXT);
+        loadingLabel.setTextColor(Color.WHITE);
+        loadingLabel.setTextSize(18);
+        loadingLabel.setGravity(Gravity.CENTER);
+        loadingLabel.setBackgroundColor(0xcc090d14);
+        loadingLabel.setPadding(dp(24), dp(14), dp(24), dp(14));
+
+        FrameLayout.LayoutParams labelParams = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        labelParams.gravity = Gravity.CENTER;
+        root.addView(loadingLabel, labelParams);
+
+        FrameLayout.LayoutParams progressParams = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(5));
+        progressParams.gravity = Gravity.TOP;
+        root.addView(progress, progressParams);
+        setContentView(root);
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    private void ensureWebView() {
+        if (webView != null) {
+            return;
+        }
         webView = new WebView(this);
         webView.setBackgroundColor(Color.BLACK);
         webView.setFocusable(true);
@@ -157,40 +201,11 @@ public final class WebPlayerActivity extends AppCompatActivity {
         CookieManager cookies = CookieManager.getInstance();
         cookies.setAcceptCookie(true);
         cookies.setAcceptThirdPartyCookies(webView, true);
-
-        progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
-        progress.setIndeterminate(false);
-        progress.setMax(100);
-        Drawable progressDrawable = progress.getProgressDrawable();
-        if (progressDrawable != null) {
-            progressDrawable.setTint(0xffe30a17);
-        }
-
-        loadingLabel = new TextView(this);
-        loadingLabel.setText(LOADING_TEXT);
-        loadingLabel.setTextColor(Color.WHITE);
-        loadingLabel.setTextSize(18);
-        loadingLabel.setGravity(Gravity.CENTER);
-        loadingLabel.setBackgroundColor(0xcc090d14);
-        loadingLabel.setPadding(dp(24), dp(14), dp(24), dp(14));
-
         webView.setWebViewClient(Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                 ? new Api26SafePlayerClient() : new SafePlayerClient());
         webView.setWebChromeClient(new PlayerChromeClient());
-        root.addView(webView, new FrameLayout.LayoutParams(
+        root.addView(webView, 0, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-
-        FrameLayout.LayoutParams labelParams = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        labelParams.gravity = Gravity.CENTER;
-        root.addView(loadingLabel, labelParams);
-
-        FrameLayout.LayoutParams progressParams = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(5));
-        progressParams.gravity = Gravity.TOP;
-        root.addView(progress, progressParams);
-        setContentView(root);
-        webView.requestFocus();
     }
 
     private void resolveAndLoad(String url) {
@@ -205,7 +220,10 @@ public final class WebPlayerActivity extends AppCompatActivity {
                 if (destroyed || isFinishing()) {
                     return;
                 }
-                if (isAllowedTopLevelUrl(resolved) && !url.equals(resolved)) {
+                String directMedia = ChannelRepository.extractNestedMediaUrl(resolved);
+                if (directMedia != null) {
+                    startNativePlayback(directMedia);
+                } else if (isAllowedTopLevelUrl(resolved) && !url.equals(resolved)) {
                     loadTrustedUrl(resolved);
                 } else {
                     sourceWrapperAttempted = true;
@@ -218,10 +236,12 @@ public final class WebPlayerActivity extends AppCompatActivity {
     }
 
     private void loadTrustedUrl(String url) {
-        if (destroyed || isFinishing() || webView == null || !isAllowedTopLevelUrl(url)) {
+        if (destroyed || isFinishing() || !isAllowedTopLevelUrl(url)) {
             return;
         }
         try {
+            releaseNativePlayer();
+            ensureWebView();
             currentUrl = url;
             showLoading(true);
             Map<String, String> headers = new HashMap<>();
@@ -234,6 +254,84 @@ public final class WebPlayerActivity extends AppCompatActivity {
         } catch (Throwable failure) {
             AppDiagnostics.record(this, "web/load", failure);
             handleMainFrameFailure(url);
+        }
+    }
+
+    private void startNativePlayback(String mediaUrl) {
+        if (destroyed || isFinishing() || root == null) {
+            return;
+        }
+        try {
+            destroyWebViewSafely();
+            releaseNativePlayer();
+            currentUrl = mediaUrl;
+            nativePlaybackStarted = true;
+            showLoading(true);
+
+            Map<String, String> headers = new HashMap<>();
+            headers.put("Referer", sourceUrl);
+            DefaultHttpDataSource.Factory dataSourceFactory = new DefaultHttpDataSource.Factory()
+                    .setUserAgent("Mozilla/5.0 (Linux; Android 12; Android TV) "
+                            + "AppleWebKit/537.36 (KHTML, like Gecko) "
+                            + "Chrome/138.0.0.0 Safari/537.36")
+                    .setAllowCrossProtocolRedirects(true)
+                    .setDefaultRequestProperties(headers);
+            nativePlayer = new ExoPlayer.Builder(this)
+                    .setMediaSourceFactory(new DefaultMediaSourceFactory(dataSourceFactory))
+                    .build();
+            nativePlayerView = new PlayerView(this);
+            nativePlayerView.setBackgroundColor(Color.BLACK);
+            nativePlayerView.setUseController(true);
+            nativePlayerView.setPlayer(nativePlayer);
+            root.addView(nativePlayerView, 0, new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            nativePlayer.addListener(new Player.Listener() {
+                @Override
+                public void onPlaybackStateChanged(int playbackState) {
+                    if (playbackState == Player.STATE_READY) {
+                        showLoading(false);
+                    }
+                }
+
+                @Override
+                public void onPlayerError(PlaybackException error) {
+                    AppDiagnostics.record(WebPlayerActivity.this, "native-fallback/playback", error);
+                    mainHandler.postDelayed(() -> {
+                        if (!destroyed && nativePlayer != null) {
+                            releaseNativePlayer();
+                            handleMainFrameFailure(mediaUrl);
+                        }
+                    }, 700L);
+                }
+            });
+            nativePlayer.setMediaItem(MediaItem.fromUri(mediaUrl));
+            nativePlayer.prepare();
+            nativePlayer.play();
+            nativePlayerView.requestFocus();
+        } catch (Throwable failure) {
+            AppDiagnostics.record(this, "native-fallback/init", failure);
+            releaseNativePlayer();
+            handleMainFrameFailure(mediaUrl);
+        }
+    }
+
+    private void releaseNativePlayer() {
+        PlayerView view = nativePlayerView;
+        nativePlayerView = null;
+        if (view != null) {
+            view.setPlayer(null);
+            if (root != null) {
+                root.removeView(view);
+            }
+        }
+        ExoPlayer player = nativePlayer;
+        nativePlayer = null;
+        if (player != null) {
+            try {
+                player.release();
+            } catch (RuntimeException ignored) {
+                // Decoder cleanup differs across Android TV vendors.
+            }
         }
     }
 
@@ -423,8 +521,8 @@ public final class WebPlayerActivity extends AppCompatActivity {
         if (loadingLabel != null) {
             loadingLabel.setVisibility(visible ? View.VISIBLE : View.GONE);
         }
-        if (progress != null && visible) {
-            progress.setVisibility(View.VISIBLE);
+        if (progress != null) {
+            progress.setVisibility(visible ? View.VISIBLE : View.GONE);
         }
     }
 
@@ -565,6 +663,10 @@ public final class WebPlayerActivity extends AppCompatActivity {
         return currentUrl;
     }
 
+    boolean nativePlaybackStartedForTest() {
+        return nativePlaybackStarted;
+    }
+
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
         if (event.getAction() == KeyEvent.ACTION_DOWN) {
@@ -602,6 +704,9 @@ public final class WebPlayerActivity extends AppCompatActivity {
         if (webView != null) {
             webView.onResume();
         }
+        if (nativePlayer != null) {
+            nativePlayer.play();
+        }
     }
 
     @Override
@@ -610,13 +715,18 @@ public final class WebPlayerActivity extends AppCompatActivity {
                 || !isInPictureInPictureMode())) {
             webView.onPause();
         }
+        if (nativePlayer != null && (Build.VERSION.SDK_INT < Build.VERSION_CODES.O
+                || !isInPictureInPictureMode())) {
+            nativePlayer.pause();
+        }
         super.onPause();
     }
 
     @Override
     public void onUserLeaveHint() {
         super.onUserLeaveHint();
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && webView != null
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                && (webView != null || nativePlayer != null)
                 && getSharedPreferences(ChannelUserData.PREFS, 0)
                 .getBoolean("pip_enabled", true)
                 && getPackageManager().hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) {
@@ -670,6 +780,7 @@ public final class WebPlayerActivity extends AppCompatActivity {
         mainHandler.removeCallbacksAndMessages(null);
         resolverExecutor.shutdownNow();
         hideCustomView();
+        releaseNativePlayer();
         destroyWebViewSafely();
         super.onDestroy();
     }

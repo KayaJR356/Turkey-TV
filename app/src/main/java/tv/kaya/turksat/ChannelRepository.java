@@ -320,6 +320,29 @@ final class ChannelRepository {
         return null;
     }
 
+    static String extractNestedMediaUrl(String playerUrl) {
+        try {
+            URL outer = new URL(playerUrl);
+            String host = outer.getHost().toLowerCase(Locale.ROOT);
+            String path = outer.getPath() == null ? "" : outer.getPath().toLowerCase(Locale.ROOT);
+            if (!("canlitv.diy".equals(host) || "www.canlitv.diy".equals(host))
+                    || !path.contains("html5video")) {
+                return null;
+            }
+            String query = outer.getQuery();
+            int start = query == null ? -1 : query.indexOf("url=");
+            if (start < 0) {
+                return null;
+            }
+            String candidate = sanitizeUrl(URLDecoder.decode(
+                    query.substring(start + 4), StandardCharsets.UTF_8.name()));
+            return candidate.startsWith("https://") && isPlayableStream(candidate)
+                    && !isTrackingSource(candidate) ? candidate : null;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
     private static boolean isTrustedWebPlayerTarget(String value) {
         try {
             URL url = new URL(value);
