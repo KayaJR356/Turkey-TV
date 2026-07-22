@@ -12,6 +12,28 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr-TR/1.1.0/) yaklaşımın
 - Yapılandırılmış bug report ve feature request formları
 - Pull request şablonu
 
+## [3.6.0] - 2026-07-22
+
+### Changed
+
+- Kaynak katalogdaki doğrudan HLS yayınları erişilebilirlik ön testi beklenmeden Media3'e
+  aktarılıyor
+- YouTube yayınları YouTube/YouTube TV uygulamasında, resmî yayın sayfaları cihazdaki uygun
+  güvenli uygulamada açılıyor
+- Uzun emülatör işi kaldırıldı; GitHub üretim akışı yalnızca APK derleme ve Lint çalıştırıyor
+
+### Fixed
+
+- Alternatif yayınların boş WebView içinde siyah ekranda kalması
+- Alternatif yayın açılırken `Yayın yükleniyor…` bilgisinin iki kez gösterilmesi
+- Çalışan HLS adreslerinin ön bağlantı zaman aşımı yüzünden hatalı biçimde web yoluna gönderilmesi
+
+### Performance
+
+- Açılışta 24 kanala yapılan yayın sağlık taraması kaldırıldı
+- Kanal değişiminde komşu yayınların arka planda önceden çözülmesi kaldırıldı
+- Yayın çözümleme ve ağ zaman aşımı süreleri kısaltıldı
+
 ## [3.5.3] - 2026-07-22
 
 ### Changed
@@ -235,7 +257,8 @@ Bu kayıt `app/build.gradle` içindeki `versionName` ve repository commit geçmi
 
 Yeni bir release yayımlanırken tarih, karşılaştırma bağlantıları ve migration notları bu dosyaya eklenmelidir.
 
-[Unreleased]: https://github.com/KayaJR356/Turkey-TV/compare/v3.5.3...HEAD
+[Unreleased]: https://github.com/KayaJR356/Turkey-TV/compare/v3.6.0...HEAD
+[3.6.0]: https://github.com/KayaJR356/Turkey-TV/releases/tag/v3.6.0
 [3.5.3]: https://github.com/KayaJR356/Turkey-TV/releases/tag/v3.5.3
 [3.5.2]: https://github.com/KayaJR356/Turkey-TV/releases/tag/v3.5.2
 [3.5.1]: https://github.com/KayaJR356/Turkey-TV/releases/tag/v3.5.1

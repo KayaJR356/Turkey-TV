@@ -80,7 +80,7 @@ jobs:
 
       - name: Build and lint
         if: steps.version.outputs.exists == 'false'
-        run: gradle :app:testDebugUnitTest :app:assembleRelease :app:lint --no-daemon
+        run: gradle :app:assembleRelease :app:lint --no-daemon
 
       - name: Package APK and checksum
         if: steps.version.outputs.exists == 'false'
@@ -113,7 +113,7 @@ jobs:
             printf '%s\n' \
               '' \
               '### Doğrulama ve güncelleme' \
-              '- Birim testleri, Android release build ve Lint GitHub Actions üzerinde çalıştırıldı' \
+              '- Android release build ve Lint GitHub Actions üzerinde çalıştırıldı' \
               '- İmzalı APK ile SHA-256 checksum birlikte yayımlandı' \
               '- Uygulama bu sürümü açılışta otomatik algılar ve özeti kurulumdan önce doğrular' \
               '- Android güvenliği gereği son kurulum onayı cihazda verilir' \

@@ -96,7 +96,6 @@ public final class MainActivity extends AppCompatActivity {
             "Spor", "Çocuk", "Belgesel", "Müzik", "Dini", "Yerel"
     };
     private static final long TOP_STATUS_VISIBLE_MS = 2_500L;
-    private static final int INITIAL_HEALTH_CHECK_LIMIT = 24;
     private static final String SITE_ORIGIN = "https://www.canlitv.diy";
     private static final String PLAYER_USER_AGENT =
             "Mozilla/5.0 (Linux; Android 12; Android TV) "
@@ -110,10 +109,8 @@ public final class MainActivity extends AppCompatActivity {
     private final Map<Integer, String> resolvedStreams = new HashMap<>();
     private final Map<Integer, Set<String>> failedStreams = new HashMap<>();
     private final Map<Integer, ChannelStatus> channelStatuses = new HashMap<>();
-    private final Set<Integer> resolvingChannels = Collections.synchronizedSet(new HashSet<>());
     private final Set<String> unlockedChannels = new HashSet<>();
     private final ExecutorService resolverExecutor = Executors.newFixedThreadPool(3);
-    private final ExecutorService healthExecutor = Executors.newFixedThreadPool(4);
 
     private FrameLayout root;
     private PlayerView playerView;
@@ -418,7 +415,6 @@ public final class MainActivity extends AppCompatActivity {
                         ChannelUserData.recordRecent(MainActivity.this, readyChannel);
                         refreshChannelRows();
                         showChannelInfo(readyChannel);
-                        prefetchAdjacentStreams(currentIndex);
                     }
                     root.requestFocus();
                 } else if (playbackState == Player.STATE_ENDED) {
@@ -1211,7 +1207,6 @@ public final class MainActivity extends AppCompatActivity {
             catalogStarted = true;
             startAfterCatalogLoad();
             refreshEpg(false);
-            uiHandler.postDelayed(() -> startChannelHealthSweep(sweepGeneration), 4_000L);
         } else if (!channels.isEmpty()) {
             updateNowPlaying(channels.get(currentIndex));
             refreshSettingLabels();
@@ -1520,7 +1515,7 @@ public final class MainActivity extends AppCompatActivity {
                     channelStatuses.put(channel.number, ChannelStatus.NATIVE);
                     playStream(resolvedUrl);
                 } else {
-                    openWebFallback(channel, generation);
+                    openWebFallback(channel, generation, resolvedUrl);
                 }
             });
         });
@@ -1565,23 +1560,21 @@ public final class MainActivity extends AppCompatActivity {
             failed.add(activeStreamUrl);
         }
         resolvedStreams.remove(channel.number);
-        if (automaticRetryCount < 2) {
+        if (automaticRetryCount < 1) {
             automaticRetryCount++;
             int generation = tuneGeneration;
-            showLoading(automaticRetryCount == 1
-                    ? "Alternatif yayın deneniyor…"
-                    : "Kanal kaynağı yenileniyor…");
+            showLoading("Alternatif yayın deneniyor…");
             uiHandler.postDelayed(() -> {
                 if (generation == tuneGeneration) {
                     startChannelPlayback(channel, generation);
                 }
             }, 350L);
         } else {
-            openWebFallback(channel, tuneGeneration);
+            openWebFallback(channel, tuneGeneration, null);
         }
     }
 
-    private void openWebFallback(Channel channel, int generation) {
+    private void openWebFallback(Channel channel, int generation, String resolvedTarget) {
         if (generation != tuneGeneration || channels.isEmpty()
                 || channels.get(currentIndex).number != channel.number) {
             return;
@@ -1591,13 +1584,13 @@ public final class MainActivity extends AppCompatActivity {
         activeStreamUrl = null;
         player.stop();
         player.clearMediaItems();
-        showLoading("Yayın yükleniyor…");
+        showLoading(null);
         setLiveState("YÜKLENİYOR");
         channelStatuses.put(channel.number, ChannelStatus.WEB);
         refreshChannelRows();
-        Toast.makeText(this, "Yayın yükleniyor…", Toast.LENGTH_SHORT).show();
         webFallbackOpen = true;
-        startActivityForResult(WebPlayerActivity.createIntent(this, channel), WEB_PLAYER_REQUEST);
+        startActivityForResult(
+                WebPlayerActivity.createIntent(this, channel, resolvedTarget), WEB_PLAYER_REQUEST);
     }
 
     @Override
@@ -1714,76 +1707,6 @@ public final class MainActivity extends AppCompatActivity {
                 && player.getPlaybackState() != Player.STATE_IDLE
                 && player.getPlaybackState() != Player.STATE_ENDED
                 && player.getPlayerError() == null;
-    }
-
-    private void prefetchAdjacentStreams(int centerIndex) {
-        if (channels.size() < 2) {
-            return;
-        }
-        int[] indexes = {
-                (centerIndex + 1) % channels.size(),
-                (centerIndex - 1 + channels.size()) % channels.size()
-        };
-        for (int index : indexes) {
-            Channel channel = channels.get(index);
-            if (resolvedStreams.containsKey(channel.number)
-                    || !resolvingChannels.add(channel.number)) {
-                continue;
-            }
-            Set<String> excluded = failedStreams.get(channel.number);
-            Set<String> excludedSnapshot = excluded == null
-                    ? Collections.emptySet() : new HashSet<>(excluded);
-            resolverExecutor.execute(() -> {
-                try {
-                    String resolvedUrl = ChannelRepository.resolvePlaybackUrl(channel, excludedSnapshot);
-                    if (resolvedUrl != null && isPlayableStream(resolvedUrl)) {
-                        runOnUiThread(() -> resolvedStreams.put(channel.number, resolvedUrl));
-                    }
-                } finally {
-                    resolvingChannels.remove(channel.number);
-                }
-            });
-        }
-    }
-
-    private void startChannelHealthSweep(int generation) {
-        if (generation != healthSweepGeneration || channels.isEmpty()) {
-            return;
-        }
-        List<Channel> snapshot = new ArrayList<>(channels);
-        int scheduled = 0;
-        for (Channel channel : snapshot) {
-            if (scheduled++ >= INITIAL_HEALTH_CHECK_LIMIT) {
-                break;
-            }
-            if (resolvedStreams.containsKey(channel.number)) {
-                continue;
-            }
-            healthExecutor.execute(() -> {
-                String resolvedUrl = ChannelRepository.resolvePlaybackUrl(channel);
-                if (generation != healthSweepGeneration) {
-                    return;
-                }
-                if (resolvedUrl != null && isPlayableStream(resolvedUrl)) {
-                    runOnUiThread(() -> {
-                        if (generation == healthSweepGeneration
-                                && findChannelIndexExact(channel.number) >= 0) {
-                            resolvedStreams.put(channel.number, resolvedUrl);
-                            channelStatuses.put(channel.number, ChannelStatus.NATIVE);
-                            refreshChannelRows();
-                        }
-                    });
-                } else {
-                    runOnUiThread(() -> {
-                        if (generation == healthSweepGeneration
-                                && findChannelIndexExact(channel.number) >= 0) {
-                            channelStatuses.put(channel.number, ChannelStatus.WEB);
-                            refreshChannelRows();
-                        }
-                    });
-                }
-            });
-        }
     }
 
     private void showRecoveredCrash() {
@@ -2471,7 +2394,6 @@ public final class MainActivity extends AppCompatActivity {
             }
         }
         resolverExecutor.shutdownNow();
-        healthExecutor.shutdownNow();
         super.onDestroy();
     }
 }
