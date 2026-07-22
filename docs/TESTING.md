@@ -12,6 +12,7 @@ GitHub Actions her push ve pull request için şunları çalıştırır:
 - `Channel` kategori eşleştirme ve katalog kategori önceliği testleri
 - `EpgRepository` XMLTV zaman ayrıştırma, `TR -`/HD ad eşleştirme ve şimdi/sonra program testleri
 - Sürüm iş akışında kalıcı anahtarla imzalı release APK ve SHA-256 üretimi
+- Pull request ve `main` için API 23 emülatöründe MainActivity açılışı ve 285 kanallık gömülü katalog testi
 
 ## Katalog araştırması — 21 Temmuz 2026
 
@@ -36,6 +37,8 @@ Aşağıdaki kaynak biçimlerini temsil eden, yayın hakkı bakımcı tarafında
 6. Oynatıcı uç noktası başarısız olup kanal sayfasından bulunan medya
 7. YouTube/tarayıcı kaynağı — yerel URL uydurulmadan güvenli web oynatıcıya geçmeli
 8. Kapalı veya coğrafi engelli yayın — kanal listede kalmalı ve web fallback/yeniden deneme sunmalı
+9. Android 6 web oynatıcı — YouTube/Castr yönlendirmesi açılmalı; ilgisiz dış alan adı engellenmeli
+10. Web alt kaynak SSL hatası — yalnızca sorunlu kaynak iptal edilmeli, kanal ekranı kapanmamalı
 
 ## Android TV kabul testi
 
@@ -85,6 +88,9 @@ Aşağıdaki kaynak biçimlerini temsil eden, yayın hakkı bakımcı tarafında
 37. Ayar yedeğini dışa aktarın; favori/ayar değiştirip yedeği içe alın ve izin verilen verilerin geri geldiğini doğrulayın.
 38. Cihaz açılışını etkinleştirip yeniden başlatın; ilk, 12 saniyelik ve 32 saniyelik denemelerden
     sonra üretici TV uygulamasının Türkiye Canlı TV'nin önüne geçmediğini doğrulayın.
+39. Uygulama verisini temizleyip interneti kapatın; ilk açılışta 285 kanallık gömülü kataloğun
+    beklemeden göründüğünü doğrulayın.
+40. `Ayarlar > Son tanılama kaydını göster` ekranının katalog/açılış hatasını gösterdiğini doğrulayın.
 
 ## Yayın doğrulama sınırı
 

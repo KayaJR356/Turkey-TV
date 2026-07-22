@@ -19,6 +19,7 @@ import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.webkit.CookieManager;
 import android.webkit.PermissionRequest;
+import android.webkit.RenderProcessGoneDetail;
 import android.webkit.SslErrorHandler;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
@@ -72,11 +73,11 @@ public final class WebPlayerActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         String url = getIntent().getStringExtra(EXTRA_URL);
         fallbackUrl = getIntent().getStringExtra(EXTRA_FALLBACK_URL);
-        if (!isTrustedTopLevelUrl(fallbackUrl) || fallbackUrl.equals(url)) {
+        if (!isAllowedTopLevelUrl(fallbackUrl) || fallbackUrl.equals(url)) {
             fallbackUrl = null;
         }
         String channelName = getIntent().getStringExtra(EXTRA_NAME);
-        if (!isTrustedTopLevelUrl(url)) {
+        if (!isAllowedTopLevelUrl(url)) {
             Toast.makeText(this, "Güvenli kanal adresi bulunamadı", Toast.LENGTH_LONG).show();
             finish();
             return;
@@ -105,7 +106,7 @@ public final class WebPlayerActivity extends AppCompatActivity {
         settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setAllowFileAccess(false);
         settings.setAllowContentAccess(false);
-        settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
+        settings.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
         settings.setSupportMultipleWindows(false);
         settings.setJavaScriptCanOpenWindowsAutomatically(false);
         settings.setLoadWithOverviewMode(true);
@@ -127,7 +128,8 @@ public final class WebPlayerActivity extends AppCompatActivity {
         progress.setMax(100);
         progress.getProgressDrawable().setTint(0xffe30a17);
 
-        webView.setWebViewClient(new SafePlayerClient());
+        webView.setWebViewClient(Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                ? new Api26SafePlayerClient() : new SafePlayerClient());
         webView.setWebChromeClient(new PlayerChromeClient());
         root.addView(webView, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -142,14 +144,14 @@ public final class WebPlayerActivity extends AppCompatActivity {
         webView.requestFocus();
     }
 
-    private final class SafePlayerClient extends WebViewClient {
+    private class SafePlayerClient extends WebViewClient {
         @Override
         public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
             Uri uri = request.getUrl();
             if (!request.isForMainFrame()) {
                 return !isSafeEmbeddedUrl(uri);
             }
-            if (isTrustedTopLevelUrl(uri == null ? null : uri.toString())) {
+            if (isAllowedTopLevelUrl(uri == null ? null : uri.toString())) {
                 return false;
             }
             handleMainFrameFailure(uri == null ? null : uri.toString());
@@ -159,7 +161,7 @@ public final class WebPlayerActivity extends AppCompatActivity {
         @SuppressWarnings("deprecation")
         @Override
         public boolean shouldOverrideUrlLoading(WebView view, String url) {
-            if (isTrustedTopLevelUrl(url)) {
+            if (isAllowedTopLevelUrl(url)) {
                 return false;
             }
             handleMainFrameFailure(url);
@@ -199,11 +201,39 @@ public final class WebPlayerActivity extends AppCompatActivity {
         @Override
         public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error) {
             handler.cancel();
-            handleMainFrameFailure(error == null ? null : error.getUrl());
+            String failedUrl = error == null ? null : error.getUrl();
+            if (isCurrentPage(failedUrl, view == null ? null : view.getUrl())) {
+                handleMainFrameFailure(failedUrl);
+            } else {
+                AppDiagnostics.record(WebPlayerActivity.this, "web/subresource-ssl",
+                        failedUrl == null ? "Bilinmeyen alt kaynak" : failedUrl);
+            }
+        }
+
+    }
+
+    @android.annotation.TargetApi(Build.VERSION_CODES.O)
+    private final class Api26SafePlayerClient extends SafePlayerClient {
+        @Override
+        public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
+            AppDiagnostics.record(WebPlayerActivity.this, "web/renderer",
+                    "didCrash=" + detail.didCrash() + ", priority="
+                            + detail.rendererPriorityAtExit());
+            setResult(RESULT_CANCELED,
+                    new Intent().putExtra(EXTRA_PLAYBACK_FAILED, true));
+            if (webView != null) {
+                root.removeView(webView);
+                webView.destroy();
+                webView = null;
+            }
+            finish();
+            return true;
         }
     }
 
     private void handleMainFrameFailure(String failedUrl) {
+        AppDiagnostics.record(this, "web/main-frame",
+                failedUrl == null ? "Bilinmeyen adres" : failedUrl);
         if (!fallbackAttempted && fallbackUrl != null
                 && (failedUrl == null || !fallbackUrl.equals(failedUrl))) {
             fallbackAttempted = true;
@@ -268,7 +298,7 @@ public final class WebPlayerActivity extends AppCompatActivity {
         webView.requestFocus();
     }
 
-    private static boolean isTrustedTopLevelUrl(String value) {
+    static boolean isAllowedTopLevelUrl(String value) {
         try {
             Uri uri = Uri.parse(value);
             String host = uri.getHost();
@@ -276,7 +306,34 @@ public final class WebPlayerActivity extends AppCompatActivity {
                 return false;
             }
             host = host.toLowerCase(Locale.ROOT);
-            return "canlitv.diy".equals(host) || "www.canlitv.diy".equals(host);
+            return "canlitv.diy".equals(host) || "www.canlitv.diy".equals(host)
+                    || isPlaybackProviderHost(host);
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private static boolean isPlaybackProviderHost(String host) {
+        return "youtu.be".equals(host) || host.endsWith(".youtube.com")
+                || "youtube.com".equals(host) || host.endsWith(".youtube-nocookie.com")
+                || "youtube-nocookie.com".equals(host)
+                || host.endsWith(".canlitv.top") || "canlitv.top".equals(host)
+                || host.endsWith(".radyolar.top") || "radyolar.top".equals(host)
+                || host.endsWith(".hipodrom.com") || "hipodrom.com".equals(host)
+                || host.endsWith(".yoltv.com") || "yoltv.com".equals(host)
+                || host.endsWith(".castr.net") || "castr.net".equals(host)
+                || host.endsWith(".castr.com") || "castr.com".equals(host)
+                || host.endsWith(".maksnet.tv") || "maksnet.tv".equals(host);
+    }
+
+    private static boolean isCurrentPage(String first, String second) {
+        try {
+            Uri firstUri = Uri.parse(first);
+            Uri secondUri = Uri.parse(second);
+            return firstUri.getHost() != null && secondUri.getHost() != null
+                    && firstUri.getHost().equalsIgnoreCase(secondUri.getHost())
+                    && firstUri.getPath() != null && secondUri.getPath() != null
+                    && firstUri.getPath().equals(secondUri.getPath());
         } catch (Exception ignored) {
             return false;
         }

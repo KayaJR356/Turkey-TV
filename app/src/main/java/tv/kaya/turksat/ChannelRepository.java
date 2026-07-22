@@ -73,21 +73,72 @@ final class ChannelRepository {
     }
 
     static List<Channel> load(Context context) {
+        List<Channel> cached = loadCache(context);
+        if (cached.size() >= MINIMUM_COMPLETE_CATALOG_SIZE) {
+            return cached;
+        }
+        List<Channel> bundled = loadBundledCatalog(context);
+        if (bundled.size() >= MINIMUM_COMPLETE_CATALOG_SIZE) {
+            return bundled;
+        }
+        AppDiagnostics.record(context, "catalog/local",
+                "Önbellek ve gömülü katalog eksik: " + cached.size() + "/" + bundled.size());
+        return new ArrayList<>();
+    }
+
+    static List<Channel> refresh(Context context) {
         try {
             List<Channel> online = downloadCatalog();
             if (online.size() >= MINIMUM_COMPLETE_CATALOG_SIZE) {
                 saveCache(context, online);
                 return online;
             }
-        } catch (Exception ignored) {
-            // The last complete catalogue is a better TV experience than a partial list.
-        }
-
-        List<Channel> cached = loadCache(context);
-        if (cached.size() >= MINIMUM_COMPLETE_CATALOG_SIZE) {
-            return cached;
+            AppDiagnostics.record(context, "catalog/online",
+                    "Eksik katalog yanıtı: " + online.size());
+        } catch (Exception error) {
+            AppDiagnostics.record(context, "catalog/online", error);
         }
         return new ArrayList<>();
+    }
+
+    static List<Channel> loadBundledCatalog(Context context) {
+        ArrayList<Channel> channels = new ArrayList<>();
+        try (InputStream input = context.getResources().openRawResource(R.raw.channel_catalog);
+             BufferedReader reader = new BufferedReader(new InputStreamReader(
+                     input, StandardCharsets.UTF_8))) {
+            StringBuilder raw = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (raw.length() + line.length() > MAX_DOCUMENT_CHARS) {
+                    throw new IllegalStateException("Bundled catalogue is too large");
+                }
+                raw.append(line);
+            }
+            JSONArray array = new JSONArray(raw.toString());
+            for (int index = 0; index < array.length(); index++) {
+                JSONArray item = array.optJSONArray(index);
+                if (item == null || item.length() < 4) {
+                    continue;
+                }
+                String name = item.optString(0, "").trim();
+                String playerId = item.optString(1, "").trim();
+                String pageUrl = trustedCatalogUrl(item.optString(2, ""));
+                String category = item.optString(3, "").trim();
+                if (name.isEmpty() || !playerId.matches("\\d+") || pageUrl == null) {
+                    continue;
+                }
+                String preferredStream = PREFERRED_STREAMS.get(normalize(name));
+                String playbackUrl = preferredStream != null
+                        ? preferredStream
+                        : String.format(Locale.ROOT, PLAYER_URL, playerId);
+                channels.add(new Channel(channels.size() + 1, name,
+                        playbackUrl, pageUrl, category));
+            }
+        } catch (Exception error) {
+            channels.clear();
+            AppDiagnostics.record(context, "catalog/bundled", error);
+        }
+        return channels;
     }
 
     static String resolvePlaybackUrl(Channel channel) {

@@ -7,7 +7,9 @@
    `ft_<oynatıcı-kimliği>` ve `tv` sınıflı satırlardan ad, sayfa bağlantısı, kategori ve oynatıcı kimliği alır.
 3. Kanallar sayfadaki sıraya göre 1'den başlayarak numaralandırılır.
 4. En az 250 kayıt dönmeyen yanıt eksik kabul edilir ve kaydedilmez.
-5. Ağ veya site hatasında yalnızca daha önce kaydedilmiş eksiksiz katalog kullanılır. Eksiksiz katalog yoksa kullanıcıya hata gösterilir.
+5. Açılışta önce son eksiksiz önbellek, o da yoksa APK içindeki doğrulanmış 285 kanallık katalog
+   anında kullanılır; canlı katalog ayrı bir arka plan isteğiyle yenilenir.
+6. Ağ veya site hatası kanal listesini boşaltmaz ve tanılama kaydına yazılır.
 
 ## Oynatma
 
@@ -26,7 +28,7 @@
 11. Mevcut kanal hazır olduğunda önceki ve sonraki kanal arka planda ön çözümlenir.
 12. Çözülen HLS/DASH/MP4 adresi oynatıcıya verilmeden önce gerçek bir HTTPS medya veya manifest
     yanıtıyla sınanır.
-13. Katalog dört iş parçacıklı düşük öncelikli sağlık taramasından geçirilir. Tarama yalnızca
+13. Kataloğun ilk 24 kaydı dört iş parçacıklı düşük öncelikli sağlık taramasından geçirilir. Tarama yalnızca
     bulunan yerel medya adreslerini önbelleğe alır; başarısız sonuçlar kanalı listeden kaldırmaz.
 14. Seçili kanalın yerel alternatifleri başarısız olursa kaynak sitenin oynatıcısı otomatik açılır.
 15. Kaynak oynatıcı HTTP/ağ/TLS hatası verirse aynı kanalın katalog sayfası ikinci web fallback
@@ -91,6 +93,10 @@
 - XMLTV ayrıştırıcısında DOCTYPE ve harici varlıklar kapatılır.
 - Cihaz açılışında başlatma, açıkça etkinleştirildiğinde ilk sinyalin ardından 12 ve 32 saniyelik
   iki ek AlarmManager denemesi yapar. Üretici yazılımının arka plan etkinliği politikasını aşamaz.
+- `TvApplication` yakalanmayan istisnayı cihazda sınırlandırılmış tanılama kaydına yazar; bir sonraki
+  açılışta kayıt gösterilir ve Ayarlar içinden tekrar okunabilir.
+- MediaSession üretici yazılımı uyumsuzluğu oynatıcıdan ayrılmış bir uyumluluk sınırında yakalanır;
+  sistem medya denetimi devre dışı kalsa bile kanal oynatma devam eder.
 
 ## Uygulama içi güncelleme
 
