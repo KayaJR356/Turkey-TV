@@ -12,6 +12,31 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr-TR/1.1.0/) yaklaşımın
 - Yapılandırılmış bug report ve feature request formları
 - Pull request şablonu
 
+## [3.5.2] - 2026-07-22
+
+### Changed
+
+- Kanal menüsündeki kategori sekmeleri ve hızlı eylemler için açık sol/sağ odak sırası tanımlandı
+- Alternatif yayın açılırken kullanıcıya yalnızca `Yayın yükleniyor…` durumu gösteriliyor
+- Kanal satırındaki `Web` durum adı kullanıcıya dönük `Alternatif yayın` olarak değiştirildi
+
+### Fixed
+
+- Reklam oynatıcısının kullanıcı etkileşimi beklemesi nedeniyle asıl yayının hiç eklenmemesi ve
+  ekranın siyah kalması
+- Kaynak sayfadaki gerçek iframe hedefi önceden çözülerek reklam katmanının eski TV WebView'ını
+  çökertmesi
+- Eski veya üreticiye özel WebView sürümlerinde başlatma, yönlendirme ve kapanış sırasında oluşan
+  yaşam döngüsü yarışları
+- Kanal menüsü açıkken sağ yön tuşunun odağı taşımak yerine menüyü kapatması
+- Ayarlar ve kanal satırlarında sol/sağ tuşlarının üst seviye kısayollarla çakışması
+
+### Tests
+
+- Dinamik ve dış iframe yayın hedefi çözümleme birim testleri
+- API 23 Android TV emülatöründe gerçek alternatif yayın Activity'si açılış testi
+- Kanal menüsünde sağ yön tuşunun paneli kapatmadığını doğrulayan kumanda testi
+
 ## [3.5.1] - 2026-07-22
 
 ### Added
@@ -189,7 +214,8 @@ Bu kayıt `app/build.gradle` içindeki `versionName` ve repository commit geçmi
 
 Yeni bir release yayımlanırken tarih, karşılaştırma bağlantıları ve migration notları bu dosyaya eklenmelidir.
 
-[Unreleased]: https://github.com/KayaJR356/Turkey-TV/compare/v3.5.1...HEAD
+[Unreleased]: https://github.com/KayaJR356/Turkey-TV/compare/v3.5.2...HEAD
+[3.5.2]: https://github.com/KayaJR356/Turkey-TV/releases/tag/v3.5.2
 [3.5.1]: https://github.com/KayaJR356/Turkey-TV/releases/tag/v3.5.1
 [3.5.0]: https://github.com/KayaJR356/Turkey-TV/releases/tag/v3.5.0
 [3.4.0]: https://github.com/KayaJR356/Turkey-TV/releases/tag/v3.4.0

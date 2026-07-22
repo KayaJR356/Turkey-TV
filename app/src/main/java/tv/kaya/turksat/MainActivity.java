@@ -496,6 +496,7 @@ public final class MainActivity extends AppCompatActivity {
                 this::showCurrentProgramGuide);
         channelSettingsButton = addChannelAction(quickActions, "⚙  AYAR",
                 () -> showSettingsPanel(true));
+        wireChannelPanelFocus();
         LinearLayout.LayoutParams quickParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(44));
         quickParams.setMargins(0, dp(5), 0, dp(6));
@@ -524,7 +525,7 @@ public final class MainActivity extends AppCompatActivity {
         scrollParams.setMargins(0, dp(4), 0, 0);
         channelPanel.addView(channelScroll, scrollParams);
 
-        TextView help = text("OK Aç  ·  Basılı tut Favori  ·  SAĞ Kapat", 11);
+        TextView help = text("OK Aç  ·  Basılı tut Favori  ·  GERİ Kapat", 11);
         help.setTextColor(0xffaab7c9);
         help.setPadding(dp(6), dp(5), dp(6), 0);
         channelPanel.addView(help, new LinearLayout.LayoutParams(
@@ -555,6 +556,7 @@ public final class MainActivity extends AppCompatActivity {
         categoryTabs.removeAllViews();
         for (String category : CATEGORIES) {
             TextView tab = text(category, 13);
+            tab.setId(View.generateViewId());
             tab.setGravity(Gravity.CENTER);
             tab.setFocusable(true);
             tab.setTag(category);
@@ -573,6 +575,44 @@ public final class MainActivity extends AppCompatActivity {
                     ViewGroup.LayoutParams.WRAP_CONTENT, dp(36));
             params.setMargins(0, 0, dp(4), dp(3));
             categoryTabs.addView(tab, params);
+        }
+        if (channelSearchButton != null) {
+            wireChannelPanelFocus();
+        }
+    }
+
+    private void wireChannelPanelFocus() {
+        if (channelSearchButton == null || channelFavoriteButton == null
+                || channelGuideButton == null || channelSettingsButton == null) {
+            return;
+        }
+        channelSearchButton.setNextFocusLeftId(channelSearchButton.getId());
+        channelSearchButton.setNextFocusRightId(channelFavoriteButton.getId());
+        channelFavoriteButton.setNextFocusLeftId(channelSearchButton.getId());
+        channelFavoriteButton.setNextFocusRightId(channelGuideButton.getId());
+        channelGuideButton.setNextFocusLeftId(channelFavoriteButton.getId());
+        channelGuideButton.setNextFocusRightId(channelSettingsButton.getId());
+        channelSettingsButton.setNextFocusLeftId(channelGuideButton.getId());
+        channelSettingsButton.setNextFocusRightId(channelSettingsButton.getId());
+
+        int selectedTabId = View.NO_ID;
+        for (int index = 0; index < categoryTabs.getChildCount(); index++) {
+            View tab = categoryTabs.getChildAt(index);
+            View previous = categoryTabs.getChildAt(Math.max(0, index - 1));
+            View next = categoryTabs.getChildAt(Math.min(categoryTabs.getChildCount() - 1,
+                    index + 1));
+            tab.setNextFocusLeftId(previous.getId());
+            tab.setNextFocusRightId(next.getId());
+            tab.setNextFocusDownId(channelSearchButton.getId());
+            if (selectedCategory.equals(tab.getTag())) {
+                selectedTabId = tab.getId();
+            }
+        }
+        if (selectedTabId != View.NO_ID) {
+            channelSearchButton.setNextFocusUpId(selectedTabId);
+            channelFavoriteButton.setNextFocusUpId(selectedTabId);
+            channelGuideButton.setNextFocusUpId(selectedTabId);
+            channelSettingsButton.setNextFocusUpId(selectedTabId);
         }
     }
 
@@ -680,7 +720,7 @@ public final class MainActivity extends AppCompatActivity {
                 Toast.LENGTH_LONG).show()).setText("Uygulama hakkında");
         refreshSettingLabels();
 
-        TextView footer = text("SAĞ veya GERİ ile kapat", 14);
+        TextView footer = text("GERİ ile kapat", 14);
         footer.setTextColor(0xffaab7c9);
         settingsPanel.addView(footer, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -690,6 +730,9 @@ public final class MainActivity extends AppCompatActivity {
         TextView row = text("", 18);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setFocusable(true);
+        row.setId(View.generateViewId());
+        row.setNextFocusLeftId(row.getId());
+        row.setNextFocusRightId(row.getId());
         row.setBackgroundResource(R.drawable.channel_row_background);
         row.setOnFocusChangeListener(this::styleFocusedRow);
         row.setOnClickListener(view -> action.run());
@@ -1195,6 +1238,10 @@ public final class MainActivity extends AppCompatActivity {
         return channels.size();
     }
 
+    boolean channelPanelVisibleForTest() {
+        return channelPanel != null && channelPanel.getVisibility() == View.VISIBLE;
+    }
+
     private void rebuildChannelList() {
         channelList.removeAllViews();
         channelRows.clear();
@@ -1204,6 +1251,8 @@ public final class MainActivity extends AppCompatActivity {
         for (int i : visibleIndexes) {
             ChannelRowView row = new ChannelRowView();
             row.setId(View.generateViewId());
+            row.setNextFocusLeftId(row.getId());
+            row.setNextFocusRightId(row.getId());
             row.setOnFocusChangeListener(this::styleFocusedRow);
             row.setOnClickListener(view -> {
                 int selectedIndex = (Integer) view.getTag();
@@ -1538,12 +1587,11 @@ public final class MainActivity extends AppCompatActivity {
         activeStreamUrl = null;
         player.stop();
         player.clearMediaItems();
-        showLoading(null);
-        setLiveState("WEB OYNATICI");
+        showLoading("Yayın yükleniyor…");
+        setLiveState("YÜKLENİYOR");
         channelStatuses.put(channel.number, ChannelStatus.WEB);
         refreshChannelRows();
-        Toast.makeText(this, channel.name + " web oynatıcısıyla açılıyor",
-                Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, "Yayın yükleniyor…", Toast.LENGTH_SHORT).show();
         webFallbackOpen = true;
         startActivityForResult(WebPlayerActivity.createIntent(this, channel), WEB_PLAYER_REQUEST);
     }
@@ -2269,29 +2317,25 @@ public final class MainActivity extends AppCompatActivity {
         }
 
         if (settingsPanel.getVisibility() == View.VISIBLE) {
-            if (key == KeyEvent.KEYCODE_BACK || key == KeyEvent.KEYCODE_DPAD_RIGHT) {
+            if (key == KeyEvent.KEYCODE_BACK) {
                 showSettingsPanel(false);
                 return true;
             }
-            if (key == KeyEvent.KEYCODE_DPAD_LEFT) {
-                return true;
-            }
             if (key == KeyEvent.KEYCODE_DPAD_UP || key == KeyEvent.KEYCODE_DPAD_DOWN
+                    || key == KeyEvent.KEYCODE_DPAD_LEFT || key == KeyEvent.KEYCODE_DPAD_RIGHT
                     || key == KeyEvent.KEYCODE_DPAD_CENTER || key == KeyEvent.KEYCODE_ENTER) {
                 return super.dispatchKeyEvent(event);
             }
         }
 
         if (channelPanel.getVisibility() == View.VISIBLE) {
-            if (key == KeyEvent.KEYCODE_BACK || key == KeyEvent.KEYCODE_DPAD_RIGHT
-                    || key == KeyEvent.KEYCODE_MENU || key == KeyEvent.KEYCODE_GUIDE) {
+            if (key == KeyEvent.KEYCODE_BACK || key == KeyEvent.KEYCODE_MENU
+                    || key == KeyEvent.KEYCODE_GUIDE) {
                 showChannelPanel(false);
                 return true;
             }
-            if (key == KeyEvent.KEYCODE_DPAD_LEFT) {
-                return true;
-            }
             if (key == KeyEvent.KEYCODE_DPAD_UP || key == KeyEvent.KEYCODE_DPAD_DOWN
+                    || key == KeyEvent.KEYCODE_DPAD_LEFT || key == KeyEvent.KEYCODE_DPAD_RIGHT
                     || key == KeyEvent.KEYCODE_DPAD_CENTER || key == KeyEvent.KEYCODE_ENTER) {
                 return super.dispatchKeyEvent(event);
             }

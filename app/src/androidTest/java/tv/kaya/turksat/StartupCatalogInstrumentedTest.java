@@ -10,6 +10,7 @@ import android.app.Instrumentation;
 import android.content.Context;
 import android.content.Intent;
 import android.os.SystemClock;
+import android.view.KeyEvent;
 
 import androidx.test.core.app.ApplicationProvider;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
@@ -77,6 +78,94 @@ public final class StartupCatalogInstrumentedTest {
         assertNotNull("Splash should open MainActivity", activityReference.get());
         assertTrue("MainActivity should load the bundled channel catalog",
                 channelCount.get() >= 250);
+    }
+
+    @Test
+    public void rightKeyNavigatesWithoutClosingChannelPanel() {
+        Instrumentation instrumentation = InstrumentationRegistry.getInstrumentation();
+        Context context = ApplicationProvider.getApplicationContext();
+        Intent launchIntent = context.getPackageManager()
+                .getLaunchIntentForPackage(context.getPackageName());
+        assertNotNull(launchIntent);
+        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+
+        AtomicReference<MainActivity> activityReference = new AtomicReference<>();
+        context.startActivity(launchIntent);
+        try {
+            for (int attempt = 0; attempt < 80 && activityReference.get() == null; attempt++) {
+                instrumentation.runOnMainSync(() -> {
+                    for (Activity activity : ActivityLifecycleMonitorRegistry.getInstance()
+                            .getActivitiesInStage(Stage.RESUMED)) {
+                        if (activity instanceof MainActivity) {
+                            activityReference.set((MainActivity) activity);
+                        }
+                    }
+                });
+                SystemClock.sleep(250L);
+            }
+            assertNotNull(activityReference.get());
+
+            instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_MENU);
+            SystemClock.sleep(300L);
+            instrumentation.runOnMainSync(() -> assertTrue(
+                    "Menu key should open the channel panel",
+                    activityReference.get().channelPanelVisibleForTest()));
+
+            instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_RIGHT);
+            SystemClock.sleep(300L);
+            instrumentation.runOnMainSync(() -> assertTrue(
+                    "Right key should navigate instead of closing the channel panel",
+                    activityReference.get().channelPanelVisibleForTest()));
+        } finally {
+            if (activityReference.get() != null) {
+                instrumentation.runOnMainSync(() -> activityReference.get().finish());
+            }
+        }
+    }
+
+    @Test
+    public void liveWebChannelStartsPlayerActivityOnMinimumAndroidVersion() {
+        Instrumentation instrumentation = InstrumentationRegistry.getInstrumentation();
+        Context context = ApplicationProvider.getApplicationContext();
+        Channel testChannel = new Channel(4, "Show TV",
+                "https://www.canlitv.diy/player/index.php?id=4&mobile=1",
+                "https://www.canlitv.diy/tr/show-tv");
+        Intent intent = WebPlayerActivity.createIntent(context, testChannel)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+
+        AtomicReference<WebPlayerActivity> activityReference = new AtomicReference<>();
+        AtomicInteger recoveryCount = new AtomicInteger();
+        AtomicReference<String> playerUrl = new AtomicReference<>();
+        context.startActivity(intent);
+        try {
+            for (int attempt = 0; attempt < 160; attempt++) {
+                instrumentation.runOnMainSync(() -> {
+                    for (Activity activity : ActivityLifecycleMonitorRegistry.getInstance()
+                            .getActivitiesInStage(Stage.RESUMED)) {
+                        if (activity instanceof WebPlayerActivity) {
+                            WebPlayerActivity playerActivity = (WebPlayerActivity) activity;
+                            activityReference.set(playerActivity);
+                            recoveryCount.set(playerActivity.playbackRecoveryCountForTest());
+                            playerUrl.set(playerActivity.currentPlayerUrlForTest());
+                        }
+                    }
+                });
+                if (activityReference.get() != null && recoveryCount.get() > 0) {
+                    break;
+                }
+                SystemClock.sleep(250L);
+            }
+        } finally {
+            if (activityReference.get() != null) {
+                instrumentation.runOnMainSync(() -> activityReference.get().finish());
+            }
+        }
+
+        assertNotNull("Web channel should keep the player activity alive", activityReference.get());
+        assertTrue("Loaded player URL should stay on a trusted video provider",
+                WebPlayerActivity.isAllowedTopLevelUrl(playerUrl.get()));
+        assertTrue("Player page should receive the playback recovery script",
+                recoveryCount.get() > 0);
     }
 
     @Test

@@ -3,7 +3,7 @@ package tv.kaya.turksat;
 enum ChannelStatus {
     CHECKING("◌", "Denetleniyor"),
     NATIVE("●", "Yerel"),
-    WEB("◆", "Web"),
+    WEB("◆", "Alternatif yayın"),
     UNAVAILABLE("○", "Geçici sorun");
 
     final String symbol;

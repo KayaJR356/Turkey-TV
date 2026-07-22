@@ -14,8 +14,8 @@ android {
         applicationId 'tv.kaya.turksat'
         minSdk 23
         targetSdk 35
-        versionCode 9
-        versionName '3.5.1'
+        versionCode 10
+        versionName '3.5.2'
 
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
 
