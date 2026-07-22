@@ -1,6 +1,7 @@
 package tv.kaya.turksat;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import android.content.Context;
@@ -47,5 +48,20 @@ public final class StartupCatalogInstrumentedTest {
 
         assertTrue("MainActivity should load the bundled channel catalog",
                 channelCount.get() >= 250);
+    }
+
+    @Test
+    public void webPlayerAllowsKnownVideoProvidersButRejectsUnknownRedirects() {
+        assertTrue(WebPlayerActivity.isAllowedTopLevelUrl(
+                "https://www.canlitv.diy/player/index.php?id=1"));
+        assertTrue(WebPlayerActivity.isAllowedTopLevelUrl(
+                "https://www.youtube.com/embed/example"));
+        assertTrue(WebPlayerActivity.isAllowedTopLevelUrl(
+                "https://player.castr.com/live_example"));
+        assertFalse(WebPlayerActivity.isAllowedTopLevelUrl(
+                "https://example.com/advertisement"));
+        assertFalse(WebPlayerActivity.isAllowedTopLevelUrl(
+                "https://youtube.com.example.com/fake-player"));
+        assertFalse(WebPlayerActivity.isAllowedTopLevelUrl("http://www.youtube.com/watch?v=x"));
     }
 }

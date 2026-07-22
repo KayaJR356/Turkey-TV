@@ -37,6 +37,8 @@ Aşağıdaki kaynak biçimlerini temsil eden, yayın hakkı bakımcı tarafında
 6. Oynatıcı uç noktası başarısız olup kanal sayfasından bulunan medya
 7. YouTube/tarayıcı kaynağı — yerel URL uydurulmadan güvenli web oynatıcıya geçmeli
 8. Kapalı veya coğrafi engelli yayın — kanal listede kalmalı ve web fallback/yeniden deneme sunmalı
+9. Android 6 web oynatıcı — YouTube/Castr yönlendirmesi açılmalı; ilgisiz dış alan adı engellenmeli
+10. Web alt kaynak SSL hatası — yalnızca sorunlu kaynak iptal edilmeli, kanal ekranı kapanmamalı
 
 ## Android TV kabul testi
 

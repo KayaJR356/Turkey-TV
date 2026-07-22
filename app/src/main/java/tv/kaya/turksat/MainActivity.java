@@ -17,6 +17,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.InputType;
+import android.text.TextUtils;
 import android.util.TypedValue;
 import android.util.Rational;
 import android.view.Gravity;
@@ -104,7 +105,7 @@ public final class MainActivity extends AppCompatActivity {
     private final Handler uiHandler = new Handler(Looper.getMainLooper());
     private final StringBuilder numberBuffer = new StringBuilder();
     private final List<Channel> channels = new ArrayList<>();
-    private final List<TextView> channelRows = new ArrayList<>();
+    private final List<ChannelRowView> channelRows = new ArrayList<>();
     private final List<TextView> settingsRows = new ArrayList<>();
     private final Map<Integer, String> resolvedStreams = new HashMap<>();
     private final Map<Integer, Set<String>> failedStreams = new HashMap<>();
@@ -278,7 +279,7 @@ public final class MainActivity extends AppCompatActivity {
 
         buildChannelPanel();
         root.addView(channelPanel, new FrameLayout.LayoutParams(
-                dp(520), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.START));
+                dp(480), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.START));
         channelPanel.setVisibility(View.GONE);
 
         buildSettingsPanel();
@@ -440,25 +441,25 @@ public final class MainActivity extends AppCompatActivity {
     private void buildChannelPanel() {
         channelPanel = new LinearLayout(this);
         channelPanel.setOrientation(LinearLayout.VERTICAL);
-        channelPanel.setPadding(dp(28), dp(26), dp(22), dp(22));
+        channelPanel.setPadding(dp(22), dp(20), dp(18), dp(16));
         channelPanel.setBackgroundResource(R.drawable.panel_background);
 
-        TextView eyebrow = text("CANLI KANAL REHBERİ", 12);
+        TextView eyebrow = text("KANALLAR", 11);
         eyebrow.setTextColor(0xffff5b66);
         eyebrow.setTypeface(eyebrow.getTypeface(), android.graphics.Typeface.BOLD);
-        eyebrow.setPadding(0, 0, 0, dp(4));
+        eyebrow.setPadding(0, 0, 0, dp(2));
         channelPanel.addView(eyebrow);
 
         LinearLayout titleRow = new LinearLayout(this);
         titleRow.setOrientation(LinearLayout.HORIZONTAL);
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
 
-        TextView title = text("Türkiye Canlı TV", 30);
+        TextView title = text("Canlı TV", 26);
         title.setTypeface(title.getTypeface(), android.graphics.Typeface.BOLD);
         titleRow.addView(title, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
-        panelClockView = text("--:--", 19);
+        panelClockView = text("--:--", 17);
         panelClockView.setGravity(Gravity.CENTER);
         panelClockView.setTextColor(0xffd9e2ef);
         titleRow.addView(panelClockView, new LinearLayout.LayoutParams(
@@ -466,11 +467,11 @@ public final class MainActivity extends AppCompatActivity {
         channelPanel.addView(titleRow, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        channelCount = text("Canlı kanallar hazırlanıyor", 15);
+        channelCount = text("Kanallar hazırlanıyor", 13);
         channelCount.setTextColor(0xffaab7c9);
         LinearLayout.LayoutParams countParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        countParams.setMargins(0, 0, 0, dp(14));
+        countParams.setMargins(0, 0, 0, dp(8));
         channelPanel.addView(channelCount, countParams);
 
         HorizontalScrollView categoryScroll = new HorizontalScrollView(this);
@@ -481,29 +482,40 @@ public final class MainActivity extends AppCompatActivity {
         categoryScroll.addView(categoryTabs, new HorizontalScrollView.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         channelPanel.addView(categoryScroll, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(48)));
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(42)));
         rebuildCategoryTabs();
 
-        channelSearchButton = addChannelAction("⌕  Kanal ara  ·  YEŞİL", this::showSearchDialog);
-        channelFavoriteButton = addChannelAction("★  Geçerli kanalı favorile", this::toggleCurrentFavorite);
-        channelGuideButton = addChannelAction("▦  Geçerli kanal program akışı",
+        LinearLayout quickActions = new LinearLayout(this);
+        quickActions.setOrientation(LinearLayout.HORIZONTAL);
+        quickActions.setGravity(Gravity.CENTER_VERTICAL);
+        channelSearchButton = addChannelAction(quickActions, "⌕  ARA", this::showSearchDialog);
+        channelFavoriteButton = addChannelAction(quickActions, "☆  EKLE",
+                this::toggleCurrentFavorite);
+        channelGuideButton = addChannelAction(quickActions, "▦  AKIŞ",
                 this::showCurrentProgramGuide);
-        channelSettingsButton = addChannelAction("⚙  Ayarlar  ·  MAVİ", () -> showSettingsPanel(true));
-        channelSearchButton.setNextFocusDownId(channelFavoriteButton.getId());
-        channelFavoriteButton.setNextFocusUpId(channelSearchButton.getId());
-        channelFavoriteButton.setNextFocusDownId(channelGuideButton.getId());
-        channelGuideButton.setNextFocusUpId(channelFavoriteButton.getId());
-        channelGuideButton.setNextFocusDownId(channelSettingsButton.getId());
-        channelSettingsButton.setNextFocusUpId(channelGuideButton.getId());
+        channelSettingsButton = addChannelAction(quickActions, "⚙  AYAR",
+                () -> showSettingsPanel(true));
+        LinearLayout.LayoutParams quickParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(44));
+        quickParams.setMargins(0, dp(5), 0, dp(6));
+        channelPanel.addView(quickActions, quickParams);
+
+        TextView listHeading = text("KANAL LİSTESİ", 10);
+        listHeading.setTextColor(0xff7f8da2);
+        listHeading.setTypeface(listHeading.getTypeface(), android.graphics.Typeface.BOLD);
+        listHeading.setPadding(dp(6), dp(3), dp(6), dp(3));
+        channelPanel.addView(listHeading);
 
         channelScroll = new ScrollView(this);
         channelScroll.setFillViewport(true);
         channelScroll.setVerticalScrollBarEnabled(false);
         channelScroll.setClipToPadding(false);
-        channelScroll.setPadding(0, dp(4), dp(4), dp(10));
+        channelScroll.setPadding(0, dp(2), dp(3), dp(6));
 
         channelList = new LinearLayout(this);
         channelList.setOrientation(LinearLayout.VERTICAL);
+        channelList.setClipChildren(false);
+        channelList.setClipToPadding(false);
         channelScroll.addView(channelList, new ScrollView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(
@@ -511,24 +523,27 @@ public final class MainActivity extends AppCompatActivity {
         scrollParams.setMargins(0, dp(4), 0, 0);
         channelPanel.addView(channelScroll, scrollParams);
 
-        TextView help = text("OK Seç  ·  OK basılı Favori  ·  SAĞ Kapat", 12);
+        TextView help = text("OK Aç  ·  Basılı tut Favori  ·  SAĞ Kapat", 11);
         help.setTextColor(0xffaab7c9);
+        help.setPadding(dp(6), dp(5), dp(6), 0);
         channelPanel.addView(help, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
     }
 
-    private TextView addChannelAction(String label, Runnable action) {
+    private TextView addChannelAction(LinearLayout parent, String label, Runnable action) {
         TextView row = text(label, 16);
         row.setId(View.generateViewId());
-        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setGravity(Gravity.CENTER);
         row.setFocusable(true);
+        row.setSingleLine(true);
+        row.setPadding(dp(5), 0, dp(5), 0);
         row.setBackgroundResource(R.drawable.channel_row_background);
         row.setOnFocusChangeListener(this::styleFocusedRow);
         row.setOnClickListener(view -> action.run());
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(48));
-        params.setMargins(0, 0, dp(4), dp(5));
-        channelPanel.addView(row, params);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.MATCH_PARENT, 1f);
+        params.setMargins(0, 0, dp(4), 0);
+        parent.addView(row, params);
         return row;
     }
 
@@ -538,11 +553,12 @@ public final class MainActivity extends AppCompatActivity {
         }
         categoryTabs.removeAllViews();
         for (String category : CATEGORIES) {
-            TextView tab = text(category, 14);
+            TextView tab = text(category, 13);
             tab.setGravity(Gravity.CENTER);
             tab.setFocusable(true);
             tab.setTag(category);
             tab.setSingleLine(true);
+            tab.setPadding(dp(14), 0, dp(14), 0);
             tab.setBackgroundResource(R.drawable.channel_row_background);
             tab.setTextColor(category.equals(selectedCategory) ? 0xffff6973 : Color.WHITE);
             tab.setOnFocusChangeListener(this::styleFocusedRow);
@@ -553,8 +569,8 @@ public final class MainActivity extends AppCompatActivity {
                 rebuildChannelList();
             });
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT, dp(42));
-            params.setMargins(0, 0, dp(5), dp(4));
+                    ViewGroup.LayoutParams.WRAP_CONTENT, dp(36));
+            params.setMargins(0, 0, dp(4), dp(3));
             categoryTabs.addView(tab, params);
         }
     }
@@ -946,8 +962,10 @@ public final class MainActivity extends AppCompatActivity {
             return;
         }
         boolean favorite = ChannelUserData.isFavorite(this, channels.get(currentIndex));
-        channelFavoriteButton.setText((favorite ? "★" : "☆")
-                + "  Geçerli kanal favorisi");
+        channelFavoriteButton.setText(favorite ? "★  ÇIKAR" : "☆  EKLE");
+        channelFavoriteButton.setContentDescription(favorite
+                ? "Geçerli kanalı favorilerden çıkar"
+                : "Geçerli kanalı favorilere ekle");
     }
 
     private void requestToggleCurrentLock() {
@@ -1183,15 +1201,8 @@ public final class MainActivity extends AppCompatActivity {
         List<Integer> visibleIndexes = filteredChannelIndexes(foldedQuery);
 
         for (int i : visibleIndexes) {
-            Channel channel = channels.get(i);
-            TextView row = text(formatChannelRow(i), 16);
+            ChannelRowView row = new ChannelRowView();
             row.setId(View.generateViewId());
-            row.setGravity(Gravity.CENTER_VERTICAL);
-            row.setSingleLine(false);
-            row.setMaxLines(2);
-            row.setFocusable(true);
-            row.setTag(i);
-            row.setBackgroundResource(R.drawable.channel_row_background);
             row.setOnFocusChangeListener(this::styleFocusedRow);
             row.setOnClickListener(view -> {
                 int selectedIndex = (Integer) view.getTag();
@@ -1205,11 +1216,11 @@ public final class MainActivity extends AppCompatActivity {
                 toggleFavorite(channels.get(selectedIndex));
                 return true;
             });
-            row.setTextColor(i == currentIndex ? 0xffff6973 : statusColor(channel));
+            row.bind(i);
 
             LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dp(68));
-            rowParams.setMargins(0, 0, 0, dp(5));
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(58));
+            rowParams.setMargins(0, 0, 0, dp(4));
             channelList.addView(row, rowParams);
             channelRows.add(row);
         }
@@ -1225,27 +1236,18 @@ public final class MainActivity extends AppCompatActivity {
         if (searchQuery.isEmpty() && "Tümü".equals(selectedCategory)) {
             channelCount.setText(String.format(Locale.forLanguageTag("tr-TR"), "%d kanal",
                     channels.size()));
-            channelSearchButton.setText("Kanal ara  ·  YEŞİL");
+            channelSearchButton.setText("⌕  ARA");
         } else {
             channelCount.setText(String.format(Locale.forLanguageTag("tr-TR"),
                     "%s  ·  %d/%d", selectedCategory, visibleIndexes.size(), channels.size()));
-            channelSearchButton.setText(searchQuery.isEmpty() ? "Kanal ara  ·  YEŞİL"
-                    : "Arama: " + searchQuery + "  ·  YEŞİL");
+            channelSearchButton.setText(searchQuery.isEmpty() ? "⌕  ARA" : "⌕  YENİ ARA");
+            channelSearchButton.setContentDescription(searchQuery.isEmpty()
+                    ? "Kanal ara" : "Yeni kanal araması yap. Geçerli arama: " + searchQuery);
+        }
+        if (searchQuery.isEmpty()) {
+            channelSearchButton.setContentDescription("Kanal ara");
         }
         updateFavoriteLabels();
-    }
-
-    private String formatChannelRow(int index) {
-        Channel channel = channels.get(index);
-        ChannelStatus status = statusFor(channel);
-        String favorite = ChannelUserData.isFavorite(this, channel) ? "★" : " ";
-        String locked = ChannelUserData.isLocked(this, channel) ? " 🔒" : "";
-        EpgProgram current = epgGuide == null ? null
-                : epgGuide.current(channel.name, System.currentTimeMillis());
-        String programme = current == null ? channel.category()
-                : current.timeRange() + "  " + current.title;
-        return String.format(Locale.forLanguageTag("tr-TR"), "%s %03d  %s%s    %s %s\n     %s",
-                favorite, channel.number, channel.name, locked, status.symbol, status.label, programme);
     }
 
     private List<Integer> filteredChannelIndexes(String foldedQuery) {
@@ -1274,13 +1276,11 @@ public final class MainActivity extends AppCompatActivity {
     }
 
     private void refreshChannelRows() {
-        for (TextView row : channelRows) {
+        for (ChannelRowView row : channelRows) {
             if (row.getTag() instanceof Integer) {
                 int index = (Integer) row.getTag();
-                row.setText(formatChannelRow(index));
-                if (!row.hasFocus()) {
-                    row.setTextColor(index == currentIndex
-                            ? 0xffff6973 : statusColor(channels.get(index)));
+                if (index >= 0 && index < channels.size()) {
+                    row.bind(index);
                 }
             }
         }
@@ -1289,6 +1289,10 @@ public final class MainActivity extends AppCompatActivity {
     private void styleFocusedRow(View view, boolean hasFocus) {
         view.animate().scaleX(hasFocus ? 1.025f : 1f).scaleY(hasFocus ? 1.025f : 1f)
                 .setDuration(110).start();
+        if (view instanceof ChannelRowView) {
+            ((ChannelRowView) view).applyVisualState(hasFocus);
+            return;
+        }
         boolean current = view.getTag() instanceof Integer
                 && (Integer) view.getTag() == currentIndex;
         int defaultColor = Color.WHITE;
@@ -1927,8 +1931,8 @@ public final class MainActivity extends AppCompatActivity {
             channelPanel.bringToFront();
             channelPanel.animate().alpha(1f).translationX(0f).setDuration(190).start();
 
-            TextView targetRow = null;
-            for (TextView row : channelRows) {
+            ChannelRowView targetRow = null;
+            for (ChannelRowView row : channelRows) {
                 if (row.getTag() instanceof Integer && (Integer) row.getTag() == currentIndex) {
                     targetRow = row;
                     break;
@@ -1938,9 +1942,12 @@ public final class MainActivity extends AppCompatActivity {
                 targetRow = channelRows.get(0);
             }
             if (targetRow != null) {
-                targetRow.setNextFocusUpId(channelSettingsButton.getId());
+                targetRow.setNextFocusUpId(channelGuideButton.getId());
+                channelSearchButton.setNextFocusDownId(targetRow.getId());
+                channelFavoriteButton.setNextFocusDownId(targetRow.getId());
+                channelGuideButton.setNextFocusDownId(targetRow.getId());
                 channelSettingsButton.setNextFocusDownId(targetRow.getId());
-                TextView focusTarget = targetRow;
+                ChannelRowView focusTarget = targetRow;
                 channelScroll.post(() -> {
                     channelScroll.smoothScrollTo(0, Math.max(0,
                             focusTarget.getTop() - channelScroll.getHeight() / 3));
@@ -2051,6 +2058,109 @@ public final class MainActivity extends AppCompatActivity {
             }
         }
         return -1;
+    }
+
+    private final class ChannelRowView extends LinearLayout {
+        private final View accentView;
+        private final TextView numberView;
+        private final TextView nameView;
+        private final TextView programView;
+        private final TextView statusView;
+
+        ChannelRowView() {
+            super(MainActivity.this);
+            setOrientation(HORIZONTAL);
+            setGravity(Gravity.CENTER_VERTICAL);
+            setFocusable(true);
+            setClipChildren(false);
+            setClipToPadding(false);
+            setPadding(dp(7), dp(4), dp(9), dp(4));
+            setBackgroundResource(R.drawable.channel_card_background);
+
+            accentView = new View(MainActivity.this);
+            LinearLayout.LayoutParams accentParams = new LinearLayout.LayoutParams(
+                    dp(3), ViewGroup.LayoutParams.MATCH_PARENT);
+            accentParams.setMargins(0, dp(4), dp(8), dp(4));
+            addView(accentView, accentParams);
+
+            numberView = text("---", 13);
+            numberView.setGravity(Gravity.CENTER);
+            numberView.setTypeface(numberView.getTypeface(), android.graphics.Typeface.BOLD);
+            numberView.setPadding(0, 0, 0, 0);
+            addView(numberView, new LinearLayout.LayoutParams(dp(46),
+                    ViewGroup.LayoutParams.MATCH_PARENT));
+
+            LinearLayout identity = new LinearLayout(MainActivity.this);
+            identity.setOrientation(VERTICAL);
+            identity.setGravity(Gravity.CENTER_VERTICAL);
+            nameView = text("", 15);
+            nameView.setTypeface(nameView.getTypeface(), android.graphics.Typeface.BOLD);
+            nameView.setSingleLine(true);
+            nameView.setEllipsize(TextUtils.TruncateAt.END);
+            nameView.setPadding(dp(3), 0, dp(8), 0);
+            identity.addView(nameView, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+
+            programView = text("", 11);
+            programView.setSingleLine(true);
+            programView.setEllipsize(TextUtils.TruncateAt.END);
+            programView.setPadding(dp(3), 0, dp(8), 0);
+            identity.addView(programView, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+            addView(identity, new LinearLayout.LayoutParams(0,
+                    ViewGroup.LayoutParams.MATCH_PARENT, 1f));
+
+            statusView = text("◌", 15);
+            statusView.setGravity(Gravity.CENTER);
+            statusView.setTypeface(statusView.getTypeface(), android.graphics.Typeface.BOLD);
+            statusView.setPadding(0, 0, 0, 0);
+            addView(statusView, new LinearLayout.LayoutParams(dp(30),
+                    ViewGroup.LayoutParams.MATCH_PARENT));
+        }
+
+        void bind(int index) {
+            if (index < 0 || index >= channels.size()) {
+                return;
+            }
+            setTag(index);
+            Channel channel = channels.get(index);
+            ChannelStatus status = statusFor(channel);
+            boolean favorite = ChannelUserData.isFavorite(MainActivity.this, channel);
+            boolean locked = ChannelUserData.isLocked(MainActivity.this, channel);
+            EpgProgram current = epgGuide == null ? null
+                    : epgGuide.current(channel.name, System.currentTimeMillis());
+            String program = current == null ? channel.category()
+                    : current.timeRange() + "  " + current.title;
+
+            numberView.setText(String.format(Locale.forLanguageTag("tr-TR"), "%03d",
+                    channel.number));
+            nameView.setText((favorite ? "★  " : "") + channel.name + (locked ? "  🔒" : ""));
+            programView.setText(program);
+            statusView.setText(status.symbol);
+            setContentDescription(String.format(Locale.forLanguageTag("tr-TR"),
+                    "%d. kanal, %s, %s, %s%s", channel.number, channel.name,
+                    status.label, program, locked ? ", kilitli" : ""));
+            applyVisualState(hasFocus());
+        }
+
+        void applyVisualState(boolean focused) {
+            if (!(getTag() instanceof Integer)) {
+                return;
+            }
+            int index = (Integer) getTag();
+            if (index < 0 || index >= channels.size()) {
+                return;
+            }
+            Channel channel = channels.get(index);
+            boolean current = index == currentIndex;
+            int primaryColor = focused ? Color.WHITE : current ? 0xffff6973 : Color.WHITE;
+            accentView.setBackgroundColor(focused ? Color.WHITE
+                    : current ? 0xffff5b66 : Color.TRANSPARENT);
+            numberView.setTextColor(focused ? Color.WHITE : 0xffff6973);
+            nameView.setTextColor(primaryColor);
+            programView.setTextColor(focused ? 0xfff4f7fb : 0xffaab7c9);
+            statusView.setTextColor(focused ? Color.WHITE : statusColor(channel));
+        }
     }
 
     private TextView text(String value, int sizeSp) {

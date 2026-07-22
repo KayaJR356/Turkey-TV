@@ -26,12 +26,17 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr-TR/1.1.0/) yaklaşımın
 - Uygulama önce yerel/gömülü kataloğu anında açıyor, canlı kataloğu arka planda yeniliyor
 - İlk açılıştaki ağır yayın sağlık taraması 285 yerine ilk 24 kanalla sınırlandı
 - Canlı katalog yenilenirken seçili kanal adı ve oynatma oturumu korunuyor
+- Kanal menüsü kompakt başlık, kategori çipleri, hızlı eylemler ve ayrı numara/program/durum
+  alanlarına sahip kumanda odaklı kanal kartlarıyla baştan tasarlandı
 
 ### Fixed
 
 - Ağ veya bozuk önbellek durumunda kanal listesinin boş kalması
 - Bazı üretici Android TV yazılımlarında MediaSession başlatma hatasının tüm uygulamayı düşürmesi
 - Katalog indirme/ayrıştırma hatalarının hiçbir tanılama izi bırakmadan sessizce yutulması
+- Android 6 WebView yolunda YouTube, Castr ve diğer güvenilir dış oynatıcıların engellenmesi
+- Bir reklam veya alt kaynak SSL hatasının açık web kanalının tamamını kapatması
+- Eski web içeriklerinin güvenli uyumluluk modunda video yükleyememesi
 
 ## [3.5.0] - 2026-07-21
 
