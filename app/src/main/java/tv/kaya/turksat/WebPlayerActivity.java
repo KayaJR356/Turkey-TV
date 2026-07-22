@@ -212,6 +212,7 @@ public final class WebPlayerActivity extends AppCompatActivity {
 
     }
 
+    @android.annotation.TargetApi(Build.VERSION_CODES.O)
     private final class Api26SafePlayerClient extends SafePlayerClient {
         @Override
         public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
