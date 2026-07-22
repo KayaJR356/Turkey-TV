@@ -2,21 +2,28 @@ package tv.kaya.turksat;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
+import android.app.Activity;
+import android.app.Instrumentation;
 import android.content.Context;
+import android.content.Intent;
 import android.os.SystemClock;
 
-import androidx.test.core.app.ActivityScenario;
 import androidx.test.core.app.ApplicationProvider;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.filters.LargeTest;
+import androidx.test.platform.app.InstrumentationRegistry;
+import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry;
+import androidx.test.runner.lifecycle.Stage;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 @RunWith(AndroidJUnit4.class)
 @LargeTest
@@ -34,18 +41,40 @@ public final class StartupCatalogInstrumentedTest {
 
     @Test
     public void mainActivityStartsAndLoadsChannelsOnMinimumAndroidVersion() {
+        Instrumentation instrumentation = InstrumentationRegistry.getInstrumentation();
+        Context context = ApplicationProvider.getApplicationContext();
+        Intent launchIntent = context.getPackageManager()
+                .getLaunchIntentForPackage(context.getPackageName());
+        assertNotNull("App launcher intent should exist", launchIntent);
+        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+
+        AtomicReference<MainActivity> activityReference = new AtomicReference<>();
         AtomicInteger channelCount = new AtomicInteger();
-        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
-            for (int attempt = 0; attempt < 24; attempt++) {
-                scenario.onActivity(activity ->
-                        channelCount.set(activity.loadedChannelCountForTest()));
-                if (channelCount.get() >= 250) {
+        context.startActivity(launchIntent);
+        try {
+            for (int attempt = 0; attempt < 120; attempt++) {
+                instrumentation.runOnMainSync(() -> {
+                    for (Activity activity : ActivityLifecycleMonitorRegistry.getInstance()
+                            .getActivitiesInStage(Stage.RESUMED)) {
+                        if (activity instanceof MainActivity) {
+                            MainActivity mainActivity = (MainActivity) activity;
+                            activityReference.set(mainActivity);
+                            channelCount.set(mainActivity.loadedChannelCountForTest());
+                        }
+                    }
+                });
+                if (activityReference.get() != null && channelCount.get() >= 250) {
                     break;
                 }
                 SystemClock.sleep(250L);
             }
+        } finally {
+            if (activityReference.get() != null) {
+                instrumentation.runOnMainSync(() -> activityReference.get().finish());
+            }
         }
 
+        assertNotNull("Splash should open MainActivity", activityReference.get());
         assertTrue("MainActivity should load the bundled channel catalog",
                 channelCount.get() >= 250);
     }

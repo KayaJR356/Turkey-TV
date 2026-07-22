@@ -26,6 +26,7 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr-TR/1.1.0/) yaklaşımın
 - Uygulama önce yerel/gömülü kataloğu anında açıyor, canlı kataloğu arka planda yeniliyor
 - İlk açılıştaki ağır yayın sağlık taraması 285 yerine ilk 24 kanalla sınırlandı
 - Canlı katalog yenilenirken seçili kanal adı ve oynatma oturumu korunuyor
+- Kanal kartları açılışta değil, kanal menüsü ilk gösterildiğinde hazırlanıyor
 - Kanal menüsü kompakt başlık, kategori çipleri, hızlı eylemler ve ayrı numara/program/durum
   alanlarına sahip kumanda odaklı kanal kartlarıyla baştan tasarlandı
 

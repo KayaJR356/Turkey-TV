@@ -168,6 +168,7 @@ public final class MainActivity extends AppCompatActivity {
     private boolean resumePlaybackOnStart;
     private boolean webFallbackOpen;
     private boolean catalogStarted;
+    private boolean channelListDirty = true;
     private volatile boolean networkUnavailable;
     private String searchQuery = "";
     private String activeStreamUrl;
@@ -566,7 +567,7 @@ public final class MainActivity extends AppCompatActivity {
                 selectedCategory = category;
                 searchQuery = "";
                 rebuildCategoryTabs();
-                rebuildChannelList();
+                invalidateChannelList();
             });
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT, dp(36));
@@ -890,7 +891,7 @@ public final class MainActivity extends AppCompatActivity {
                 return;
             }
             epgGuide = guide;
-            rebuildChannelList();
+            invalidateChannelList();
             if (!channels.isEmpty()) {
                 updateNowPlaying(channels.get(currentIndex));
             }
@@ -953,7 +954,7 @@ public final class MainActivity extends AppCompatActivity {
         Toast.makeText(this, channel.name + (enabled
                 ? " favorilere eklendi" : " favorilerden çıkarıldı"), Toast.LENGTH_SHORT).show();
         rebuildCategoryTabs();
-        rebuildChannelList();
+        invalidateChannelList();
         refreshSettingLabels();
     }
 
@@ -980,7 +981,7 @@ public final class MainActivity extends AppCompatActivity {
             }
             Toast.makeText(this, channel.name + (locked ? " kilitlendi" : " kilidi kaldırıldı"),
                     Toast.LENGTH_SHORT).show();
-            rebuildChannelList();
+            invalidateChannelList();
             refreshSettingLabels();
         };
         if (ChannelUserData.hasPin(this)) {
@@ -1105,7 +1106,7 @@ public final class MainActivity extends AppCompatActivity {
             applyAspectMode();
             applyTrackPreferences();
             rebuildCategoryTabs();
-            rebuildChannelList();
+            invalidateChannelList();
             refreshSettingLabels();
             Toast.makeText(this, "Ayarlar ve favoriler geri yüklendi",
                     Toast.LENGTH_SHORT).show();
@@ -1161,7 +1162,7 @@ public final class MainActivity extends AppCompatActivity {
             channelStatuses.put(channel.number, ChannelStatus.CHECKING);
         }
         searchQuery = "";
-        rebuildChannelList();
+        invalidateChannelList();
 
         if (!catalogStarted && allowStartup) {
             catalogStarted = true;
@@ -1247,7 +1248,19 @@ public final class MainActivity extends AppCompatActivity {
         if (searchQuery.isEmpty()) {
             channelSearchButton.setContentDescription("Kanal ara");
         }
+        channelListDirty = false;
         updateFavoriteLabels();
+    }
+
+    private void invalidateChannelList() {
+        channelListDirty = true;
+        if (channelCount != null && searchQuery.isEmpty() && "Tümü".equals(selectedCategory)) {
+            channelCount.setText(String.format(Locale.forLanguageTag("tr-TR"), "%d kanal",
+                    channels.size()));
+        }
+        if (channelPanel != null && channelPanel.getVisibility() == View.VISIBLE) {
+            rebuildChannelList();
+        }
     }
 
     private List<Integer> filteredChannelIndexes(String foldedQuery) {
@@ -1276,6 +1289,10 @@ public final class MainActivity extends AppCompatActivity {
     }
 
     private void refreshChannelRows() {
+        if (channelPanel == null || channelPanel.getVisibility() != View.VISIBLE) {
+            channelListDirty = true;
+            return;
+        }
         for (ChannelRowView row : channelRows) {
             if (row.getTag() instanceof Integer) {
                 int index = (Integer) row.getTag();
@@ -1924,6 +1941,9 @@ public final class MainActivity extends AppCompatActivity {
             hideTopStatusBarNow();
             settingsPanel.animate().cancel();
             settingsPanel.setVisibility(View.GONE);
+            if (channelListDirty) {
+                rebuildChannelList();
+            }
             channelPanel.animate().cancel();
             channelPanel.setAlpha(0f);
             channelPanel.setTranslationX(-dp(120));
@@ -2007,7 +2027,7 @@ public final class MainActivity extends AppCompatActivity {
 
     private void applySearch(String query) {
         searchQuery = query == null ? "" : query.trim();
-        rebuildChannelList();
+        invalidateChannelList();
         showChannelPanel(true);
     }
 
@@ -2026,7 +2046,7 @@ public final class MainActivity extends AppCompatActivity {
         int index = findChannelIndex(number);
         if (index >= 0 && index < channels.size() && channels.get(index).number == number) {
             searchQuery = "";
-            rebuildChannelList();
+            invalidateChannelList();
             showChannelPanel(false);
             tune(index);
         } else {
