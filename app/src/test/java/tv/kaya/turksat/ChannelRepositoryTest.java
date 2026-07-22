@@ -70,4 +70,14 @@ public final class ChannelRepositoryTest {
         assertNull(ChannelRepository.extractWebPlayerUrl(source,
                 "<iframe src='https://example.com/advertisement'></iframe>"));
     }
+
+    @Test
+    public void extractsNestedHlsForNativePlayback() {
+        assertEquals("https://cdn.example.test/live/show.m3u8?app=showtv_web",
+                ChannelRepository.extractNestedMediaUrl(
+                        "https://canlitv.diy/player/html5video.php?url="
+                                + "https://cdn.example.test/live/show.m3u8?app=showtv_web"));
+        assertNull(ChannelRepository.extractNestedMediaUrl(
+                "https://example.com/player.html?url=https://cdn.example.test/live/show.m3u8"));
+    }
 }

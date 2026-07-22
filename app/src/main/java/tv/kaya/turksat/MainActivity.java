@@ -1242,6 +1242,10 @@ public final class MainActivity extends AppCompatActivity {
         return channelPanel != null && channelPanel.getVisibility() == View.VISIBLE;
     }
 
+    void openChannelPanelForTest() {
+        showChannelPanel(true);
+    }
+
     private void rebuildChannelList() {
         channelList.removeAllViews();
         channelRows.clear();

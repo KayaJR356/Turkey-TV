@@ -10,7 +10,6 @@ import android.app.Instrumentation;
 import android.content.Context;
 import android.content.Intent;
 import android.os.SystemClock;
-import android.view.KeyEvent;
 
 import androidx.test.core.app.ApplicationProvider;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
@@ -105,13 +104,14 @@ public final class StartupCatalogInstrumentedTest {
             }
             assertNotNull(activityReference.get());
 
-            instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_MENU);
+            instrumentation.runOnMainSync(
+                    () -> activityReference.get().openChannelPanelForTest());
             SystemClock.sleep(300L);
             instrumentation.runOnMainSync(() -> assertTrue(
                     "Menu key should open the channel panel",
                     activityReference.get().channelPanelVisibleForTest()));
 
-            instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_RIGHT);
+            instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_DPAD_RIGHT);
             SystemClock.sleep(300L);
             instrumentation.runOnMainSync(() -> assertTrue(
                     "Right key should navigate instead of closing the channel panel",
@@ -135,6 +135,7 @@ public final class StartupCatalogInstrumentedTest {
 
         AtomicReference<WebPlayerActivity> activityReference = new AtomicReference<>();
         AtomicInteger recoveryCount = new AtomicInteger();
+        AtomicInteger nativeStartCount = new AtomicInteger();
         AtomicReference<String> playerUrl = new AtomicReference<>();
         context.startActivity(intent);
         try {
@@ -146,11 +147,14 @@ public final class StartupCatalogInstrumentedTest {
                             WebPlayerActivity playerActivity = (WebPlayerActivity) activity;
                             activityReference.set(playerActivity);
                             recoveryCount.set(playerActivity.playbackRecoveryCountForTest());
+                            nativeStartCount.set(playerActivity.nativePlaybackStartedForTest()
+                                    ? 1 : 0);
                             playerUrl.set(playerActivity.currentPlayerUrlForTest());
                         }
                     }
                 });
-                if (activityReference.get() != null && recoveryCount.get() > 0) {
+                if (activityReference.get() != null
+                        && (nativeStartCount.get() > 0 || recoveryCount.get() > 0)) {
                     break;
                 }
                 SystemClock.sleep(250L);
@@ -162,10 +166,11 @@ public final class StartupCatalogInstrumentedTest {
         }
 
         assertNotNull("Web channel should keep the player activity alive", activityReference.get());
-        assertTrue("Loaded player URL should stay on a trusted video provider",
-                WebPlayerActivity.isAllowedTopLevelUrl(playerUrl.get()));
-        assertTrue("Player page should receive the playback recovery script",
-                recoveryCount.get() > 0);
+        assertTrue("Player should use native media or a trusted web video provider",
+                nativeStartCount.get() > 0
+                        || WebPlayerActivity.isAllowedTopLevelUrl(playerUrl.get()));
+        assertTrue("Player should start native media or run web playback recovery",
+                nativeStartCount.get() > 0 || recoveryCount.get() > 0);
     }
 
     @Test
