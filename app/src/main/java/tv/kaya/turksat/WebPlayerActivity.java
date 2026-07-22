@@ -87,15 +87,21 @@ public final class WebPlayerActivity extends AppCompatActivity {
     private WebChromeClient.CustomViewCallback customViewCallback;
     private String sourceUrl;
     private String fallbackUrl;
+    private String channelName;
     private String currentUrl;
-    private boolean sourceWrapperAttempted;
     private boolean fallbackAttempted;
     private boolean destroyed;
     private boolean nativePlaybackStarted;
     private int playbackRecoveryCount;
 
     static Intent createIntent(Context context, Channel channel) {
-        String url = channel.isDirectStream() ? channel.pageUrl : channel.playbackUrl;
+        return createIntent(context, channel, null);
+    }
+
+    static Intent createIntent(Context context, Channel channel, String resolvedTarget) {
+        String url = isSafePlaybackUrl(resolvedTarget)
+                ? resolvedTarget
+                : (channel.isDirectStream() ? channel.pageUrl : channel.playbackUrl);
         return new Intent(context, WebPlayerActivity.class)
                 .putExtra(EXTRA_URL, url)
                 .putExtra(EXTRA_FALLBACK_URL, channel.pageUrl)
@@ -119,14 +125,14 @@ public final class WebPlayerActivity extends AppCompatActivity {
         if (!isAllowedTopLevelUrl(fallbackUrl) || fallbackUrl.equals(sourceUrl)) {
             fallbackUrl = null;
         }
-        if (!isAllowedTopLevelUrl(sourceUrl)) {
+        if (!isSafePlaybackUrl(sourceUrl)) {
             finishWithPlaybackFailure("web/invalid-url", "Güvenli kanal adresi bulunamadı");
             return;
         }
 
         try {
             initializePlayerUi();
-            String channelName = getIntent().getStringExtra(EXTRA_NAME);
+            channelName = getIntent().getStringExtra(EXTRA_NAME);
             setTitle(channelName == null ? getString(R.string.app_name) : channelName);
             resolveAndLoad(sourceUrl);
         } catch (Throwable unavailable) {
@@ -211,28 +217,108 @@ public final class WebPlayerActivity extends AppCompatActivity {
     private void resolveAndLoad(String url) {
         showLoading(true);
         if (!isCanliTvPlayerWrapper(url)) {
-            loadTrustedUrl(url);
+            if (!launchExternalPlayback(url)) {
+                finishWithPlaybackFailure("external/unavailable",
+                        "Bu yayın için cihazda uygun uygulama bulunamadı");
+            }
             return;
         }
         resolverExecutor.execute(() -> {
-            String resolved = ChannelRepository.resolveWebPlayerUrl(url, fallbackUrl);
+            Channel temporary = new Channel(0, channelName == null ? "Yayın" : channelName,
+                    url, fallbackUrl == null ? url : fallbackUrl);
+            String resolved = ChannelRepository.resolvePlaybackUrl(temporary);
             mainHandler.post(() -> {
                 if (destroyed || isFinishing()) {
                     return;
                 }
-                String directMedia = ChannelRepository.extractNestedMediaUrl(resolved);
+                String directMedia = isPlayableMediaUrl(resolved)
+                        ? resolved : ChannelRepository.extractNestedMediaUrl(resolved);
                 if (directMedia != null) {
                     startNativePlayback(directMedia);
-                } else if (isAllowedTopLevelUrl(resolved) && !url.equals(resolved)) {
-                    loadTrustedUrl(resolved);
+                } else if (isSafePlaybackUrl(resolved) && !url.equals(resolved)
+                        && launchExternalPlayback(resolved)) {
+                    return;
+                } else if (fallbackUrl != null && launchExternalPlayback(fallbackUrl)) {
+                    return;
                 } else {
-                    sourceWrapperAttempted = true;
-                    AppDiagnostics.record(this, "web/resolve",
-                            "Doğrudan yayın hedefi bulunamadı; kaynak sayfa deneniyor");
-                    loadTrustedUrl(url);
+                    finishWithPlaybackFailure("web/resolve",
+                            "Yayın sağlayıcısı geçerli bir bağlantı göndermedi");
                 }
             });
         });
+    }
+
+    private boolean launchExternalPlayback(String value) {
+        if (!isSafeExternalUrl(value) || destroyed || isFinishing()) {
+            return false;
+        }
+        Uri uri = externalPlaybackUri(value);
+        if (uri == null) {
+            return false;
+        }
+        if (isYouTubeUrl(uri)) {
+            String[] packages = {"com.google.android.youtube.tv", "com.google.android.youtube"};
+            for (String packageName : packages) {
+                try {
+                    Intent youtube = new Intent(Intent.ACTION_VIEW, uri)
+                            .setPackage(packageName)
+                            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                    startActivity(youtube);
+                    finishAfterExternalLaunch();
+                    return true;
+                } catch (RuntimeException ignored) {
+                    // Try the next installed YouTube/browser handler.
+                }
+            }
+        }
+        try {
+            Intent browser = new Intent(Intent.ACTION_VIEW, uri)
+                    .addCategory(Intent.CATEGORY_BROWSABLE)
+                    .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            startActivity(browser);
+            finishAfterExternalLaunch();
+            return true;
+        } catch (RuntimeException ignored) {
+            return false;
+        }
+    }
+
+    private void finishAfterExternalLaunch() {
+        setResult(RESULT_OK);
+        finish();
+    }
+
+    private static Uri externalPlaybackUri(String value) {
+        try {
+            Uri uri = Uri.parse(value);
+            String host = uri.getHost();
+            if (host != null && ("youtube.com".equalsIgnoreCase(host)
+                    || "www.youtube.com".equalsIgnoreCase(host)
+                    || "youtube-nocookie.com".equalsIgnoreCase(host)
+                    || "www.youtube-nocookie.com".equalsIgnoreCase(host))) {
+                String path = uri.getPath();
+                if (path != null && path.startsWith("/embed/")) {
+                    String videoId = path.substring("/embed/".length()).split("/")[0];
+                    if (!videoId.isEmpty()) {
+                        return Uri.parse("https://www.youtube.com/watch?v=" + videoId);
+                    }
+                }
+            }
+            return uri;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private static boolean isYouTubeUrl(Uri uri) {
+        String host = uri == null ? null : uri.getHost();
+        if (host == null) {
+            return false;
+        }
+        host = host.toLowerCase(Locale.ROOT);
+        return "youtu.be".equals(host) || "youtube.com".equals(host)
+                || host.endsWith(".youtube.com") || "youtube-nocookie.com".equals(host)
+                || host.endsWith(".youtube-nocookie.com");
     }
 
     private void loadTrustedUrl(String url) {
@@ -451,22 +537,12 @@ public final class WebPlayerActivity extends AppCompatActivity {
         }
         AppDiagnostics.record(this, "web/main-frame",
                 failedUrl == null ? "Bilinmeyen adres" : failedUrl);
-        if (!sourceWrapperAttempted && isAllowedTopLevelUrl(sourceUrl)
-                && (failedUrl == null || !sourceUrl.equals(failedUrl))) {
-            sourceWrapperAttempted = true;
-            stopLoadingSafely();
-            loadTrustedUrl(sourceUrl);
-            return;
-        }
         if (!fallbackAttempted && fallbackUrl != null
                 && (failedUrl == null || !fallbackUrl.equals(failedUrl))) {
             fallbackAttempted = true;
-            stopLoadingSafely();
-            loadTrustedUrl(fallbackUrl);
-            return;
-        }
-        if (fallbackAttempted && failedUrl != null && !fallbackUrl.equals(failedUrl)) {
-            return;
+            if (launchExternalPlayback(fallbackUrl)) {
+                return;
+            }
         }
         finishWithPlaybackFailure("web/main-frame",
                 "Yayın şu anda yanıt vermiyor; kanal listede tutuldu");
@@ -560,6 +636,37 @@ public final class WebPlayerActivity extends AppCompatActivity {
             host = host.toLowerCase(Locale.ROOT);
             return "canlitv.diy".equals(host) || "www.canlitv.diy".equals(host)
                     || isPlaybackProviderHost(host);
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private static boolean isSafePlaybackUrl(String value) {
+        return isPlayableMediaUrl(value) || isSafeExternalUrl(value);
+    }
+
+    private static boolean isPlayableMediaUrl(String value) {
+        if (value == null) {
+            return false;
+        }
+        String lower = value.toLowerCase(Locale.ROOT);
+        return lower.startsWith("https://") && (lower.contains(".m3u8")
+                || lower.contains(".mpd") || lower.contains(".mp4")
+                || lower.contains("format=m3u8") || lower.contains("format=mpd"));
+    }
+
+    private static boolean isSafeExternalUrl(String value) {
+        try {
+            Uri uri = Uri.parse(value);
+            String host = uri.getHost();
+            if (host == null || !"https".equalsIgnoreCase(uri.getScheme())) {
+                return false;
+            }
+            host = host.toLowerCase(Locale.ROOT);
+            return !"localhost".equals(host) && !host.endsWith(".local")
+                    && !host.startsWith("127.") && !host.startsWith("10.")
+                    && !host.startsWith("192.168.") && !host.startsWith("169.254.")
+                    && !host.matches("172\\.(1[6-9]|2[0-9]|3[01])\\..*");
         } catch (Exception ignored) {
             return false;
         }

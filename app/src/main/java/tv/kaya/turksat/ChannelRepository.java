@@ -43,7 +43,7 @@ final class ChannelRepository {
     private static final int MINIMUM_COMPLETE_CATALOG_SIZE = 250;
     private static final int MAX_RESOLVE_DEPTH = 3;
     private static final int MAX_DOCUMENT_CHARS = 1_250_000;
-    private static final long MAX_RESOLVE_TIME_MS = 11_000L;
+    private static final long MAX_RESOLVE_TIME_MS = 6_000L;
     private static final String USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                     + "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -59,6 +59,10 @@ final class ChannelRepository {
             "<(?:iframe|video|source)[^>]+(?:src|data-src|data-lazy-src)\\s*=\\s*"
                     + "['\\\"]([^'\\\"]+)['\\\"]",
             Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+    private static final Pattern FALLBACK_LINK = Pattern.compile(
+            "(?:telif-uyari|frameCode)[\\s\\S]{0,900}?<a[^>]+href\\s*=\\s*"
+                    + "['\\\"]([^'\\\"]+)['\\\"]",
+            Pattern.CASE_INSENSITIVE);
     private static final Pattern ENCODED_URL = Pattern.compile(
             "https?%3A%2F%2F[^\\s\\\"'<>]+", Pattern.CASE_INSENSITIVE);
     private static final Pattern BASE64_PAYLOAD = Pattern.compile(
@@ -147,8 +151,7 @@ final class ChannelRepository {
 
     static String resolvePlaybackUrl(Channel channel, Set<String> excludedStreams) {
         Set<String> excluded = sanitizeExcludedStreams(excludedStreams);
-        if (channel.isDirectStream() && !excluded.contains(sanitizeUrl(channel.playbackUrl))
-                && isStreamReachable(channel.playbackUrl, channel.pageUrl)) {
+        if (channel.isDirectStream() && !excluded.contains(sanitizeUrl(channel.playbackUrl))) {
             return channel.playbackUrl;
         }
 
@@ -196,7 +199,7 @@ final class ChannelRepository {
             }
             executor.shutdownNow();
         }
-        // Native playback is intentionally strict: never return a web page as media.
+        // The result may be native media or a trusted external player/application URL.
         return null;
     }
 
@@ -207,13 +210,15 @@ final class ChannelRepository {
             Set<String> visited,
             Set<String> excluded) throws Exception {
         if (source == null || depth > MAX_RESOLVE_DEPTH || !source.startsWith("https://")
-                || isBrowserOnlySource(source) || !visited.add(source)) {
+                || !visited.add(source)) {
             return null;
+        }
+        if (isBrowserOnlySource(source)) {
+            return isSafeExternalPlaybackTarget(source) ? source : null;
         }
         if (isPlayableStream(source)) {
             String stream = sanitizeUrl(source);
-            return excluded.contains(stream) || !isStreamReachable(stream, referer)
-                    ? null : stream;
+            return excluded.contains(stream) ? null : stream;
         }
 
         String normalizedHtml = normalizeDocument(downloadText(source, referer));
@@ -244,12 +249,12 @@ final class ChannelRepository {
         }
 
         for (String candidate : candidates) {
-            if (isPlayableStream(candidate) && !excluded.contains(sanitizeUrl(candidate))
-                    && isStreamReachable(candidate, source)) {
+            if (isPlayableStream(candidate) && !excluded.contains(sanitizeUrl(candidate))) {
                 return candidate;
             }
         }
 
+        String externalFallback = null;
         Matcher embedMatcher = EMBED_URL.matcher(normalizedHtml);
         while (embedMatcher.find()) {
             String embedUrl = absoluteUrl(source, sanitizeUrl(embedMatcher.group(1)));
@@ -258,20 +263,34 @@ final class ChannelRepository {
             if (nestedStream != null) {
                 return nestedStream;
             }
+            if (externalFallback == null && isSafeExternalPlaybackTarget(embedUrl)) {
+                externalFallback = embedUrl;
+            }
         }
 
         Matcher quotedMatcher = QUOTED_URL.matcher(normalizedHtml);
         while (quotedMatcher.find()) {
             String candidate = sanitizeUrl(quotedMatcher.group(1));
-            if (isLikelyPlayerPage(candidate)) {
+            if (isTrustedWebPlayerTarget(candidate)) {
                 String nestedStream = resolveNativeStream(
                         candidate, source, depth + 1, visited, excluded);
                 if (nestedStream != null) {
                     return nestedStream;
                 }
+                if (externalFallback == null && isSafeExternalPlaybackTarget(candidate)) {
+                    externalFallback = candidate;
+                }
             }
         }
-        return null;
+
+        Matcher fallbackMatcher = FALLBACK_LINK.matcher(normalizedHtml);
+        while (fallbackMatcher.find()) {
+            String candidate = absoluteUrl(source, sanitizeUrl(fallbackMatcher.group(1)));
+            if (isSafeExternalPlaybackTarget(candidate)) {
+                return candidate;
+            }
+        }
+        return externalFallback;
     }
 
     private static String absoluteUrl(String base, String candidate) {
@@ -314,6 +333,14 @@ final class ChannelRepository {
         while (quotedMatcher.find()) {
             String candidate = absoluteUrl(source, sanitizeUrl(quotedMatcher.group(1)));
             if (!sameUrl(source, candidate) && isTrustedWebPlayerTarget(candidate)) {
+                return candidate;
+            }
+        }
+
+        Matcher fallbackMatcher = FALLBACK_LINK.matcher(normalizeDocument(html));
+        while (fallbackMatcher.find()) {
+            String candidate = absoluteUrl(source, sanitizeUrl(fallbackMatcher.group(1)));
+            if (!sameUrl(source, candidate) && isSafeExternalPlaybackTarget(candidate)) {
                 return candidate;
             }
         }
@@ -364,6 +391,25 @@ final class ChannelRepository {
                     || isHostOrSubdomain(host, "castr.net")
                     || isHostOrSubdomain(host, "castr.com")
                     || isHostOrSubdomain(host, "maksnet.tv");
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private static boolean isSafeExternalPlaybackTarget(String value) {
+        try {
+            URL url = new URL(value);
+            if (!"https".equalsIgnoreCase(url.getProtocol()) || isTrackingSource(value)) {
+                return false;
+            }
+            String host = url.getHost().toLowerCase(Locale.ROOT);
+            if ("canlitv.diy".equals(host) || "www.canlitv.diy".equals(host)) {
+                return false;
+            }
+            return !host.isEmpty() && !"localhost".equals(host) && !host.endsWith(".local")
+                    && !host.startsWith("127.") && !host.startsWith("10.")
+                    && !host.startsWith("192.168.") && !host.startsWith("169.254.")
+                    && !host.matches("172\\.(1[6-9]|2[0-9]|3[01])\\..*");
         } catch (Exception ignored) {
             return false;
         }
@@ -466,64 +512,6 @@ final class ChannelRepository {
                 || value.contains("doubleclick");
     }
 
-    private static boolean isStreamReachable(String source, String referer) {
-        HttpURLConnection connection = null;
-        try {
-            URL url = new URL(source);
-            if (!"https".equalsIgnoreCase(url.getProtocol())) {
-                return false;
-            }
-            connection = (HttpURLConnection) url.openConnection();
-            connection.setConnectTimeout(4500);
-            connection.setReadTimeout(6500);
-            connection.setInstanceFollowRedirects(true);
-            connection.setRequestProperty("User-Agent", USER_AGENT);
-            connection.setRequestProperty("Accept-Language", "tr-TR,tr;q=0.9");
-            connection.setRequestProperty("Accept", "application/vnd.apple.mpegurl, "
-                    + "application/dash+xml, video/mp4, */*");
-            if (referer != null && referer.startsWith("https://")) {
-                connection.setRequestProperty("Referer", referer);
-            }
-
-            String lower = source.toLowerCase(Locale.ROOT);
-            boolean manifest = lower.contains(".m3u8") || lower.contains(".mpd")
-                    || lower.contains("format=m3u8") || lower.contains("format=mpd");
-            if (!manifest) {
-                connection.setRequestProperty("Range", "bytes=0-1");
-            }
-
-            int status = connection.getResponseCode();
-            if (status != HttpURLConnection.HTTP_OK
-                    && status != HttpURLConnection.HTTP_PARTIAL) {
-                return false;
-            }
-            if (!"https".equalsIgnoreCase(connection.getURL().getProtocol())) {
-                return false;
-            }
-            if (!manifest) {
-                return connection.getContentLength() != 0;
-            }
-
-            try (InputStream input = connection.getInputStream()) {
-                byte[] buffer = new byte[16 * 1024];
-                int read = input.read(buffer);
-                if (read <= 0) {
-                    return false;
-                }
-                String header = new String(buffer, 0, read, StandardCharsets.UTF_8)
-                        .toLowerCase(Locale.ROOT);
-                return lower.contains(".mpd") || lower.contains("format=mpd")
-                        ? header.contains("<mpd") : header.contains("#extm3u");
-            }
-        } catch (Exception ignored) {
-            return false;
-        } finally {
-            if (connection != null) {
-                connection.disconnect();
-            }
-        }
-    }
-
     private static List<Channel> downloadCatalog() throws Exception {
         return parseCatalogHtml(downloadText(CATALOG_URL));
     }
@@ -606,8 +594,8 @@ final class ChannelRepository {
 
     private static String downloadText(String source, String referer) throws Exception {
         HttpURLConnection connection = (HttpURLConnection) new URL(source).openConnection();
-        connection.setConnectTimeout(4500);
-        connection.setReadTimeout(7000);
+        connection.setConnectTimeout(2800);
+        connection.setReadTimeout(4500);
         connection.setRequestProperty("User-Agent", USER_AGENT);
         connection.setRequestProperty("Accept-Language", "tr-TR,tr;q=0.9");
         if (referer != null && referer.startsWith("https://")) {
